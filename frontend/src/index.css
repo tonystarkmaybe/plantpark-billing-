@@ -1,0 +1,118 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    /* 17px base — generous for older eyes. Honors OS font scaling via rem. */
+    font-size: 17px;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-surface-muted text-ink font-sans font-medium antialiased;
+    /* Comfortable reading rhythm. */
+    line-height: 1.55;
+    /* Respect the iOS safe areas (notch / home indicator). */
+    min-height: 100dvh;
+  }
+
+  /* Strong, visible focus rings for keyboard + switch users. */
+  :focus-visible {
+    @apply outline-none ring-4 ring-primary-500/35;
+  }
+
+  h1, h2, h3 {
+    @apply text-ink font-bold tracking-tight;
+  }
+
+  /* Money & key figures: even digit widths so totals don't jitter on change. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
+}
+
+@layer components {
+  /* ── Buttons ──────────────────────────────────────────────────────────────
+     Press feedback is CSS-driven (active:) so it's reliable, JS-free, and
+     auto-disabled under prefers-reduced-motion via the media query below. */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-control
+           font-semibold text-base select-none
+           transition-[transform,background-color,box-shadow,border-color] duration-gentle
+           disabled:opacity-60 disabled:pointer-events-none;
+  }
+  /* Primary: vivid green, green-tinted lift, sinks on press. Label is bold so
+     white-on-green clears WCAG AA for large text. */
+  .btn-primary {
+    @apply btn bg-primary-600 text-white font-bold shadow-btn
+           hover:bg-primary-500
+           active:bg-primary-700 active:translate-y-px active:shadow-sm;
+  }
+  /* Secondary: soft white chip (hairline + lift), not a heavy form outline. */
+  .btn-secondary {
+    @apply btn bg-white text-ink border border-border-strong shadow-sm
+           hover:bg-surface-muted hover:border-border-strong
+           active:translate-y-px active:shadow-none;
+  }
+  .btn-ghost {
+    @apply btn bg-transparent text-ink-soft
+           hover:bg-surface-sunken active:bg-surface-sunken;
+  }
+  .btn-danger {
+    @apply btn bg-danger text-white font-bold shadow-sm
+           hover:opacity-95 active:translate-y-px active:shadow-none;
+  }
+  /* Sizes: action (56px primary), tap (48px min), sm (44px compact). */
+  .btn-action {
+    @apply h-action w-full text-lg;
+  }
+  .btn-tap {
+    @apply h-tap px-5;
+  }
+  .btn-sm {
+    @apply h-11 px-4 text-base;
+  }
+
+  /* ── Inputs ───────────────────────────────────────────────────────────────
+     Soft resting edge (1px strong border + subtle lift); bold green focus ring.
+     Border width stays 1px on focus (ring does the work) so there's no jump. */
+  .field-label {
+    @apply block text-base font-semibold text-ink mb-2;
+  }
+  .field {
+    @apply h-action w-full rounded-control border border-border-strong
+           bg-white px-4 text-lg text-ink placeholder:text-ink-faint shadow-sm
+           transition-[border-color,box-shadow] duration-gentle
+           focus:border-primary-600 focus:shadow-focus;
+  }
+  .field-error {
+    @apply border-danger shadow-none
+           focus:border-danger focus:shadow-[0_0_0_4px_rgba(192,38,38,0.18)];
+  }
+
+  /* ── Surfaces ──────────────────────────────────────────────────────────────
+     Cards float via soft shadow alone — no outline (the border + shadow combo
+     is what read as flat/cheap before). */
+  .card {
+    @apply rounded-card bg-surface shadow-card;
+  }
+  .list-row {
+    @apply flex items-center gap-4 min-h-tap px-4 py-4 bg-white
+           border-b border-border last:border-b-0;
+  }
+}
+
+/* Respect reduced-motion: disable non-essential animation & transitions. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

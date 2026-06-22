@@ -1,0 +1,11 @@
+# Root gitignore
+.claude/
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.DS_Store
+Thumbs.db

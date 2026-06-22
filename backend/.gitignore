@@ -1,0 +1,16 @@
+# Environment & secrets
+.env
+.env.*
+!.env.example
+
+# Uploaded media (do not commit user uploads; keep MEDIA_ROOT out of git)
+media/
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/

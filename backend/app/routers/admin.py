@@ -1,0 +1,193 @@
+"""Admin-only shop & owner management.
+
+Every route here requires the platform admin (require_admin). The admin operates
+under the 'admin' RLS context, so it can read/write across all shops. There is
+no public/self registration — shop owners exist only because the admin created
+them.
+"""
+from __future__ import annotations
+
+import uuid
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import func, or_, select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from app.auth.dependencies import get_db, require_admin
+from app.auth.security import hash_password
+from app.models.customer import Customer
+from app.models.shop import Shop
+from app.models.user import ROLE_SHOP_OWNER, User
+from app.schemas.admin import (
+    AdminCustomerList,
+    AdminCustomerRow,
+    OwnerInfo,
+    ResetPasswordRequest,
+    ShopActivateRequest,
+    ShopCreateRequest,
+    ShopCreateResponse,
+    ShopListRow,
+    ShopSummary,
+)
+
+router = APIRouter(
+    prefix="/admin",
+    tags=["admin"],
+    dependencies=[Depends(require_admin)],
+)
+
+
+@router.post("/shops", response_model=ShopCreateResponse, status_code=status.HTTP_201_CREATED)
+def create_shop(payload: ShopCreateRequest, db: Session = Depends(get_db)) -> ShopCreateResponse:
+    """Create a shop and its first shop_owner user in one transaction."""
+    existing = db.execute(
+        select(User).where(User.email == str(payload.owner_email))
+    ).scalar_one_or_none()
+    if existing is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A user with this email already exists",
+        )
+
+    shop = Shop(
+        name=payload.name,
+        owner_name=payload.owner_name,
+        owner_phone=payload.owner_phone,
+    )
+    db.add(shop)
+    db.flush()  # assign shop.id before creating the owner
+
+    owner = User(
+        shop_id=shop.id,
+        email=str(payload.owner_email),
+        password_hash=hash_password(payload.owner_password),
+        role=ROLE_SHOP_OWNER,
+    )
+    db.add(owner)
+
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A user with this email already exists",
+        )
+
+    db.refresh(shop)
+    db.refresh(owner)
+    return ShopCreateResponse(
+        shop=ShopSummary.model_validate(shop),
+        owner=OwnerInfo.model_validate(owner),
+    )
+
+
+@router.get("/shops", response_model=list[ShopListRow])
+def list_shops(db: Session = Depends(get_db)) -> list[ShopListRow]:
+    """All shops (newest first), each joined to its owner's login email.
+
+    The owner is the shop's single shop_owner user created alongside the shop.
+    Stats (product/bill counts, sales) are intentionally omitted for now to keep
+    this query fast — a future enhancement if the dashboard needs them.
+    """
+    rows = db.execute(
+        select(
+            Shop.id,
+            Shop.name,
+            Shop.owner_name,
+            Shop.owner_phone,
+            Shop.is_active,
+            Shop.created_at,
+            User.email.label("owner_email"),
+        )
+        .outerjoin(User, (User.shop_id == Shop.id) & (User.role == ROLE_SHOP_OWNER))
+        .order_by(Shop.created_at.desc())
+    ).all()
+    return [
+        ShopListRow(
+            id=r.id,
+            name=r.name,
+            owner_name=r.owner_name,
+            owner_phone=r.owner_phone,
+            owner_email=r.owner_email,
+            is_active=r.is_active,
+            created_at=r.created_at,
+        )
+        for r in rows
+    ]
+
+
+@router.get("/customers", response_model=AdminCustomerList)
+def list_all_customers(
+    db: Session = Depends(get_db),
+    q: str | None = Query(default=None, description="Search customer name OR phone (case-insensitive)"),
+    shop_id: uuid.UUID | None = Query(default=None, description="Restrict to one shop"),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> AdminCustomerList:
+    """Cross-shop customer directory (admin sees all shops via the admin RLS policy).
+
+    Ordered by created_at desc (most recent first). Contains end-customers'
+    personal contact details, so it is admin-only and not exportable.
+    """
+    base = select(Customer, Shop.name.label("shop_name")).join(Shop, Shop.id == Customer.shop_id)
+    if q:
+        like = f"%{q}%"
+        base = base.where(or_(Customer.name.ilike(like), Customer.phone.ilike(like)))
+    if shop_id is not None:
+        base = base.where(Customer.shop_id == shop_id)
+
+    total = db.execute(select(func.count()).select_from(base.subquery())).scalar_one()
+
+    rows = db.execute(
+        base.order_by(Customer.created_at.desc()).limit(limit).offset(offset)
+    ).all()
+
+    items = [
+        AdminCustomerRow(
+            id=c.id,
+            name=c.name,
+            phone=c.phone,
+            shop_id=c.shop_id,
+            shop_name=shop_name,
+            created_at=c.created_at,
+        )
+        for c, shop_name in rows
+    ]
+    return AdminCustomerList(items=items, total=total, limit=limit, offset=offset)
+
+
+@router.patch("/shops/{shop_id}", response_model=ShopSummary)
+def set_shop_active(
+    shop_id: uuid.UUID,
+    payload: ShopActivateRequest,
+    db: Session = Depends(get_db),
+) -> Shop:
+    shop = db.execute(select(Shop).where(Shop.id == shop_id)).scalar_one_or_none()
+    if shop is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Shop not found")
+    shop.is_active = payload.is_active
+    db.flush()
+    db.refresh(shop)
+    return shop
+
+
+@router.post("/shops/{shop_id}/reset-password", response_model=OwnerInfo)
+def reset_owner_password(
+    shop_id: uuid.UUID,
+    payload: ResetPasswordRequest,
+    db: Session = Depends(get_db),
+) -> User:
+    """Set a new password for the given shop's owner."""
+    owner = db.execute(
+        select(User).where(User.shop_id == shop_id, User.role == ROLE_SHOP_OWNER)
+    ).scalar_one_or_none()
+    if owner is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Shop owner not found"
+        )
+    owner.password_hash = hash_password(payload.new_password)
+    db.flush()
+    db.refresh(owner)
+    return owner

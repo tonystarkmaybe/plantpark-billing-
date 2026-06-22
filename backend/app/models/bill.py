@@ -1,0 +1,83 @@
+from __future__ import annotations
+
+import datetime as dt
+import decimal
+import uuid
+
+from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, Text, text
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column
+
+from app.models.base import Base, created_at_col, uuid_pk
+
+
+class Bill(Base):
+    __tablename__ = "bills"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    shop_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("shops.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    customer_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("customers.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    bill_type: Mapped[str] = mapped_column(Text, nullable=False)  # 'retail' | 'wholesale'
+    subtotal: Mapped[decimal.Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    discount_type: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("'flat'")
+    )  # 'flat' | 'percent'
+    discount_value: Mapped[decimal.Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False, server_default=text("0")
+    )
+    discount_amount: Mapped[decimal.Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False, server_default=text("0")
+    )
+    total: Mapped[decimal.Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    cash_amount: Mapped[decimal.Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False, server_default=text("0")
+    )
+    upi_amount: Mapped[decimal.Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False, server_default=text("0")
+    )
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    # Client-generated key making POST /bills idempotent: a retry/double-tap with
+    # the same key returns the original bill instead of creating a duplicate.
+    # Unique per shop (partial unique index in migration 0002).
+    idempotency_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Last WhatsApp send outcome for this bill (debugging/admin only; never gates
+    # the saved sale). One of the SendWhatsAppResult statuses, or NULL if never tried.
+    whatsapp_last_status: Mapped[str | None] = mapped_column(Text, nullable=True)
+    whatsapp_sent_at: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[dt.datetime] = created_at_col()
+
+
+class BillItem(Base):
+    __tablename__ = "bill_items"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    bill_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("bills.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    # Nullable so historical bills survive product deletion; name/price are
+    # denormalized snapshots captured at the time of sale.
+    product_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("products.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    product_name: Mapped[str] = mapped_column(Text, nullable=False)
+    unit_price: Mapped[decimal.Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    line_total: Mapped[decimal.Decimal] = mapped_column(Numeric(12, 2), nullable=False)
