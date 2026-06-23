@@ -50,9 +50,10 @@ export function SummaryHero({ date, onDateChange, summary, loading, error, onRet
               {summary.bill_count} {summary.bill_count === 1 ? "bill" : "bills"}
             </p>
 
-            <div className="mt-5 grid grid-cols-2 gap-3">
+            <div className="mt-5 grid grid-cols-3 gap-3">
               <Stat label="Cash" value={formatINR(toPaise(summary.cash_total))} accent="cash" />
               <Stat label="UPI" value={formatINR(toPaise(summary.upi_total))} accent="upi" />
+              <Stat label="Due" value={formatINR(toPaise(summary.due_total || "0"))} accent="due" />
             </div>
           </>
         ) : null}
@@ -61,8 +62,15 @@ export function SummaryHero({ date, onDateChange, summary, loading, error, onRet
   );
 }
 
-function Stat({ label, value, accent }: { label: string; value: string; accent?: "cash" | "upi" }) {
-  const labelColor = accent === "cash" ? "text-cash" : accent === "upi" ? "text-upi" : "text-ink-soft";
+function Stat({ label, value, accent }: { label: string; value: string; accent?: "cash" | "upi" | "due" }) {
+  const labelColor =
+    accent === "cash"
+      ? "text-cash"
+      : accent === "upi"
+        ? "text-upi"
+        : accent === "due"
+          ? "text-danger"
+          : "text-ink-soft";
   return (
     <div className="rounded-control bg-surface-muted px-4 py-3">
       <div className={`text-base font-semibold ${labelColor}`}>{label}</div>

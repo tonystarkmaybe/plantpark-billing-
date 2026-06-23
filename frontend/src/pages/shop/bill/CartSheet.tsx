@@ -2,11 +2,11 @@ import { BottomSheet } from "@/components/BottomSheet";
 import { Button } from "@/components/Button";
 import { formatINR, toPaise } from "@/lib/money";
 import type { Totals } from "@/lib/money";
-import { useBilling, type CartLine } from "@/store/billing";
-import { QuantityStepper } from "./QuantityStepper";
+import { useBilling } from "@/store/billing";
 import { DiscountSection } from "./DiscountSection";
 import { CustomerSection } from "./CustomerSection";
 import { PaymentSection } from "./PaymentSection";
+import { Trash2 } from "lucide-react";
 
 interface CartSheetProps {
   open: boolean;
@@ -19,38 +19,41 @@ interface CartSheetProps {
 }
 
 /**
- * The full cart: each line shows an editable per-unit price (pre-filled from the
- * product, adjustable for size) and a quantity stepper, followed by discount,
- * customer, and payment, topped off by one big sticky "Save Bill · ₹X" action.
- * The cart is preserved on recoverable errors so the user can simply retry.
+ * The final Checkout/Preview sheet: displays a read-only summary of the lines in the bill,
+ * followed by the totals breakdown, discount section, customer information, and payment method selection,
+ * finishing with the final "Save Bill" trigger.
  */
 export function CartSheet({ open, onClose, totals, onCheckout, saving, errorMsg }: CartSheetProps) {
   const {
     lines,
-    setQuantity,
-    setLinePrice,
+    removeLine,
     discountType,
     discountValue,
     setDiscount,
     payMethod,
     cash,
     upi,
+    due,
     setPayMethod,
     setCash,
     setUpi,
+    setDue,
     customer,
     setCustomer,
+    remarks,
+    setRemarks,
   } = useBilling();
 
-  const sumPaise = toPaise(cash) + toPaise(upi);
+  const sumPaise = toPaise(cash) + toPaise(upi) + toPaise(due);
   const balanced = sumPaise === totals.totalPaise;
-  const canSave = lines.length > 0 && payMethod !== null && balanced && !saving;
+  const phoneValid = !customer.phone.trim() || customer.phone.replace(/\D/g, "").length === 10;
+  const canSave = lines.length > 0 && payMethod !== null && balanced && !saving && phoneValid;
 
   return (
     <BottomSheet
       open={open}
       onClose={onClose}
-      title="New bill"
+      title="Checkout Summary"
       footer={
         <div className="space-y-3">
           {errorMsg && (
@@ -71,7 +74,7 @@ export function CartSheet({ open, onClose, totals, onCheckout, saving, errorMsg 
           </Button>
           {!balanced && lines.length > 0 && payMethod !== null && (
             <p className="text-center text-base font-semibold text-ink-soft">
-              Cash + UPI must add up to {formatINR(totals.totalPaise)}.
+              Payments must add up to {formatINR(totals.totalPaise)}.
             </p>
           )}
         </div>
@@ -79,31 +82,50 @@ export function CartSheet({ open, onClose, totals, onCheckout, saving, errorMsg 
     >
       {lines.length === 0 ? (
         <p className="py-10 text-center text-base text-ink-soft">
-          Your cart is empty. Tap products to add them.
+          Your cart is empty. Add items to the bill.
         </p>
       ) : (
         <div className="space-y-6">
-          {/* Line items */}
-          <ul className="divide-y divide-border">
-            {lines.map((l) => (
-              <LineRow
-                key={l.product_id}
-                line={l}
-                onPrice={(v) => setLinePrice(l.product_id, v)}
-                onQty={(n) => setQuantity(l.product_id, n)}
-              />
-            ))}
-          </ul>
+          {/* Read-only Items Review */}
+          <div className="space-y-2">
+            <h3 className="text-base font-semibold text-ink-soft">Items Review</h3>
+            <ul className="divide-y divide-border rounded-2xl border border-border bg-surface px-4 py-2">
+              {lines.map((l) => {
+                const lineTotal = toPaise(l.unit_price) * l.quantity;
+                return (
+                  <li key={l.product_id} className="flex items-center justify-between py-2 text-base font-semibold text-ink">
+                    <span className="min-w-0 flex-1 truncate">
+                      {l.product_name} <span className="text-ink-soft ml-1">x{l.quantity}</span>
+                    </span>
+                    <div className="flex items-center gap-3">
+                      <span className="tnum shrink-0">
+                        {formatINR(lineTotal)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => removeLine(l.product_id)}
+                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-red-200
+                                   bg-red-50 text-red-500 hover:bg-red-100 active:scale-95"
+                        aria-label={`Remove ${l.product_name}`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
 
-          {/* Totals */}
-          <div className="space-y-1 rounded-control bg-surface-muted px-4 py-3">
+          {/* Totals Summary */}
+          <div className="space-y-1 rounded-2xl bg-surface-muted px-4 py-3 border border-border">
             <Row label="Subtotal" value={formatINR(totals.subtotalPaise)} />
             {totals.discountPaise > 0 && (
               <Row label="Discount" value={`− ${formatINR(totals.discountPaise)}`} />
             )}
             <div className="flex items-center justify-between pt-1 text-xl font-extrabold text-ink">
               <span>Total</span>
-              <span>{formatINR(totals.totalPaise)}</span>
+              <span className="tnum">{formatINR(totals.totalPaise)}</span>
             </div>
           </div>
 
@@ -117,56 +139,35 @@ export function CartSheet({ open, onClose, totals, onCheckout, saving, errorMsg 
 
           <CustomerSection value={customer} onChange={setCustomer} />
 
+          <div>
+            <span className="mb-2 block text-base font-semibold text-ink">
+              Remarks <span className="font-normal text-ink-soft">(optional)</span>
+            </span>
+            <input
+              type="text"
+              value={remarks}
+              onChange={(e) => setRemarks(e.target.value)}
+              placeholder="Add remarks or notes about this bill"
+              className="field"
+              aria-label="Bill remarks"
+              autoComplete="off"
+            />
+          </div>
+
           <PaymentSection
             totalPaise={totals.totalPaise}
             method={payMethod}
             cash={cash}
             upi={upi}
+            due={due}
             setMethod={setPayMethod}
             setCash={setCash}
             setUpi={setUpi}
+            setDue={setDue}
           />
         </div>
       )}
     </BottomSheet>
-  );
-}
-
-/** One cart line: name, editable unit price, quantity stepper, and line total. */
-function LineRow({
-  line,
-  onPrice,
-  onQty,
-}: {
-  line: CartLine;
-  onPrice: (value: string) => void;
-  onQty: (quantity: number) => void;
-}) {
-  const linePaise = toPaise(line.unit_price) * line.quantity;
-  return (
-    <li className="py-3">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1 text-lg font-semibold text-ink">{line.product_name}</div>
-        <div className="shrink-0 text-lg font-bold text-ink">{formatINR(linePaise)}</div>
-      </div>
-      <div className="mt-2 flex items-center justify-between gap-3">
-        {/* Editable per-unit price (size-based pricing is normal) */}
-        <label className="flex items-center gap-1 rounded-control border-2 border-border bg-white px-3 py-1.5">
-          <span className="text-lg font-bold text-ink-soft">₹</span>
-          <input
-            type="text"
-            inputMode="decimal"
-            value={line.unit_price}
-            onChange={(e) => onPrice(e.target.value.replace(/[^0-9.]/g, ""))}
-            placeholder="0.00"
-            className="w-20 bg-transparent text-lg font-bold text-ink outline-none"
-            aria-label={`Price for ${line.product_name}`}
-          />
-          <span className="text-base font-medium text-ink-faint">each</span>
-        </label>
-        <QuantityStepper value={line.quantity} onChange={onQty} allowZero />
-      </div>
-    </li>
   );
 }
 

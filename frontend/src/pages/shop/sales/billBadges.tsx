@@ -6,6 +6,7 @@ export function PaymentBadge({ method }: { method: PaymentMethod }) {
     cash: { label: "Cash", cls: "text-cash" },
     upi: { label: "UPI", cls: "text-upi" },
     split: { label: "Split", cls: "text-ink-soft" },
+    due: { label: "Due", cls: "text-danger" },
   }[method];
   return <span className={`text-sm font-semibold ${map.cls}`}>{map.label}</span>;
 }

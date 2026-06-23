@@ -6,6 +6,7 @@ import { shiftDay, todayISO } from "@/lib/datetime";
 export interface HistoryFilterValue {
   from: string; // YYYY-MM-DD or ""
   to: string; // YYYY-MM-DD or ""
+  is_edited?: boolean;
 }
 
 interface HistoryFiltersProps {
@@ -18,7 +19,7 @@ export function HistoryFilters({ value, onChange }: HistoryFiltersProps) {
   const [open, setOpen] = useState(false);
   const reduce = useReducedMotion();
 
-  const activeCount = value.from || value.to ? 1 : 0;
+  const activeCount = (value.from || value.to ? 1 : 0) + (value.is_edited ? 1 : 0);
 
   const setRange = (from: string, to: string) => onChange({ ...value, from, to });
 
@@ -88,6 +89,19 @@ export function HistoryFilters({ value, onChange }: HistoryFiltersProps) {
                     aria-label="To date"
                   />
                 </div>
+              </div>
+
+              {/* Special filters */}
+              <div className="border-t border-border pt-4">
+                <label className="flex items-center gap-2.5 text-base font-semibold text-ink cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={!!value.is_edited}
+                    onChange={(e) => onChange({ ...value, is_edited: e.target.checked ? true : undefined })}
+                    className="h-5 w-5 rounded border-border text-primary-600 focus:ring-primary-600/20"
+                  />
+                  <span>Show edited bills only</span>
+                </label>
               </div>
             </div>
           </motion.div>

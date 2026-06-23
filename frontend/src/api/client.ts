@@ -1,7 +1,7 @@
 import axios, { AxiosError } from "axios";
 import type { ApiErrorBody } from "./types";
 
-const baseURL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
+const baseURL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
 
 export const api = axios.create({
   baseURL,
@@ -58,3 +58,19 @@ export function friendlyError(error: unknown, fallback = "Something went wrong. 
   }
   return fallback;
 }
+
+export function getMediaUrl(photoUrl: string | null): string | null {
+  if (!photoUrl) return null;
+  if (
+    photoUrl.startsWith("http://") ||
+    photoUrl.startsWith("https://") ||
+    photoUrl.startsWith("data:") ||
+    photoUrl.startsWith("blob:")
+  ) {
+    return photoUrl;
+  }
+  const cleanBase = baseURL.replace(/\/$/, "");
+  const cleanPath = photoUrl.replace(/^\//, "");
+  return `${cleanBase}/${cleanPath}`;
+}
+

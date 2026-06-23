@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { listShops, setShopActive, type ShopRow } from "@/api/admin";
+import { listShops, updateShop, deleteShop, type ShopRow } from "@/api/admin";
 import { friendlyError } from "@/api/client";
 import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/Button";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { CreateShopModal } from "./CreateShopModal";
 import { ResetPasswordModal } from "./ResetPasswordModal";
+import { BusinessDetailsModal } from "./BusinessDetailsModal";
 
 type StatusFilter = "all" | "active" | "inactive";
 
@@ -24,7 +25,9 @@ export function ShopsPage() {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [resetShop, setResetShop] = useState<ShopRow | null>(null);
+  const [editDetailsShop, setEditDetailsShop] = useState<ShopRow | null>(null);
   const [deactivateShop, setDeactivateShop] = useState<ShopRow | null>(null);
+  const [deleteShopTarget, setDeleteShopTarget] = useState<ShopRow | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const [toast, setToast] = useState<string | null>(null);
@@ -68,7 +71,7 @@ export function ShopsPage() {
   async function applyActive(shop: ShopRow, isActive: boolean) {
     setBusyId(shop.id);
     try {
-      await setShopActive(shop.id, isActive);
+      await updateShop(shop.id, { is_active: isActive });
       showToast(isActive ? `${shop.name} reactivated.` : `${shop.name} deactivated.`);
       await load();
     } catch (e) {
@@ -76,6 +79,33 @@ export function ShopsPage() {
     } finally {
       setBusyId(null);
       setDeactivateShop(null);
+    }
+  }
+
+  async function handleToggleWhatsapp(shop: ShopRow, autoSend: boolean) {
+    setBusyId(shop.id);
+    try {
+      await updateShop(shop.id, { whatsapp_auto_send: autoSend });
+      showToast(autoSend ? `WhatsApp auto-send enabled for ${shop.name}.` : `WhatsApp auto-send disabled for ${shop.name}.`);
+      await load();
+    } catch (e) {
+      showToast(friendlyError(e, "Failed to update WhatsApp setting."));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function applyDelete(shop: ShopRow) {
+    setBusyId(shop.id);
+    try {
+      await deleteShop(shop.id);
+      showToast(`${shop.name} deleted successfully.`);
+      await load();
+    } catch (e) {
+      showToast(friendlyError(e, "Delete failed."));
+    } finally {
+      setBusyId(null);
+      setDeleteShopTarget(null);
     }
   }
 
@@ -148,20 +178,30 @@ export function ShopsPage() {
             <table className="w-full text-left text-base">
               <thead className="border-b border-border bg-surface-muted text-sm text-ink-soft">
                 <tr>
-                  <Th>Shop</Th><Th>Owner</Th><Th>Email</Th><Th>Phone</Th><Th>Status</Th><Th>Created</Th><Th>Actions</Th>
+                  <Th>Shop</Th><Th>Owner Email</Th><Th>Status</Th><Th>Auto WhatsApp</Th><Th>Created</Th><Th>Actions</Th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map((s) => (
                   <tr key={s.id} className="border-b border-border last:border-b-0">
                     <td className="px-4 py-3 font-semibold text-ink">{s.name}</td>
-                    <td className="px-4 py-3 text-ink-soft">{s.owner_name ?? "—"}</td>
                     <td className="px-4 py-3 text-ink-soft">{s.owner_email ?? "—"}</td>
-                    <td className="px-4 py-3 text-ink-soft">{s.owner_phone ?? "—"}</td>
                     <td className="px-4 py-3"><StatusBadge active={s.is_active} /></td>
+                    <td className="px-4 py-3">
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={s.whatsapp_auto_send}
+                          disabled={busyId === s.id}
+                          onChange={(e) => handleToggleWhatsapp(s, e.target.checked)}
+                          className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
+                      </label>
+                    </td>
                     <td className="px-4 py-3 text-ink-soft">{formatDate(s.created_at)}</td>
                     <td className="px-4 py-3">
-                      <RowActions shop={s} busy={busyId === s.id} onToggle={toggleActive} onReset={setResetShop} />
+                      <RowActions shop={s} busy={busyId === s.id} onToggle={toggleActive} onReset={setResetShop} onDelete={setDeleteShopTarget} onEditDetails={setEditDetailsShop} />
                     </td>
                   </tr>
                 ))}
@@ -176,16 +216,28 @@ export function ShopsPage() {
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <div className="truncate text-lg font-bold text-ink">{s.name}</div>
-                    <div className="truncate text-base text-ink-soft">{s.owner_name ?? "—"}</div>
                   </div>
                   <StatusBadge active={s.is_active} />
                 </div>
                 <div className="mt-2 space-y-0.5 text-base text-ink-soft">
                   <div className="truncate">{s.owner_email ?? "—"}</div>
-                  <div>{s.owner_phone ?? "—"} · {formatDate(s.created_at)}</div>
+                  <div>Created: {formatDate(s.created_at)}</div>
+                  <div className="flex items-center justify-between pt-1">
+                    <span>Auto WhatsApp:</span>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={s.whatsapp_auto_send}
+                        disabled={busyId === s.id}
+                        onChange={(e) => handleToggleWhatsapp(s, e.target.checked)}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
+                    </label>
+                  </div>
                 </div>
                 <div className="mt-3">
-                  <RowActions shop={s} busy={busyId === s.id} onToggle={toggleActive} onReset={setResetShop} />
+                  <RowActions shop={s} busy={busyId === s.id} onToggle={toggleActive} onReset={setResetShop} onDelete={setDeleteShopTarget} onEditDetails={setEditDetailsShop} />
                 </div>
               </div>
             ))}
@@ -195,6 +247,7 @@ export function ShopsPage() {
 
       <CreateShopModal open={createOpen} onClose={() => setCreateOpen(false)} onCreated={load} />
       <ResetPasswordModal shop={resetShop} onClose={() => setResetShop(null)} />
+      <BusinessDetailsModal shop={editDetailsShop} onClose={() => setEditDetailsShop(null)} onSaved={load} />
       <ConfirmDialog
         open={deactivateShop !== null}
         title={`Deactivate ${deactivateShop?.name ?? "shop"}?`}
@@ -204,6 +257,16 @@ export function ShopsPage() {
         destructive
         onConfirm={() => deactivateShop && applyActive(deactivateShop, false)}
         onCancel={() => setDeactivateShop(null)}
+      />
+      <ConfirmDialog
+        open={deleteShopTarget !== null}
+        title={`Delete ${deleteShopTarget?.name ?? "shop"}?`}
+        body="This will permanently delete the shop and all its data, including salespeople, products, customers, and bill history. This action cannot be undone."
+        confirmLabel="Delete permanently"
+        cancelLabel="Cancel"
+        destructive
+        onConfirm={() => deleteShopTarget && applyDelete(deleteShopTarget)}
+        onCancel={() => setDeleteShopTarget(null)}
       />
 
       <AnimatePresence>
@@ -238,15 +301,25 @@ function StatusBadge({ active }: { active: boolean }) {
 }
 
 function RowActions({
-  shop, busy, onToggle, onReset,
+  shop, busy, onToggle, onReset, onDelete, onEditDetails,
 }: {
   shop: ShopRow;
   busy: boolean;
   onToggle: (s: ShopRow) => void;
   onReset: (s: ShopRow) => void;
+  onDelete: (s: ShopRow) => void;
+  onEditDetails: (s: ShopRow) => void;
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => onEditDetails(shop)}
+        className="rounded-control border border-border-strong px-3 py-1.5 text-sm font-semibold text-ink hover:bg-surface-muted disabled:opacity-50"
+      >
+        Business details
+      </button>
       <button
         type="button"
         disabled={busy}
@@ -267,6 +340,14 @@ function RowActions({
         className="rounded-control border border-border-strong px-3 py-1.5 text-sm font-semibold text-ink hover:bg-surface-muted disabled:opacity-50"
       >
         Reset password
+      </button>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => onDelete(shop)}
+        className="rounded-control border border-danger-soft px-3 py-1.5 text-sm font-semibold text-danger hover:bg-danger-soft disabled:opacity-50"
+      >
+        Delete
       </button>
     </div>
   );

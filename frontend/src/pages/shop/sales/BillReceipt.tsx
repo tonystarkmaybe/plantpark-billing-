@@ -20,8 +20,19 @@ export function BillReceipt({ bill }: { bill: BillDetail }) {
     <div className="space-y-6">
       {/* Header */}
       <div className="text-center">
-        <h2 className="text-xl font-extrabold text-ink">{bill.shop_name ?? "Bill"}</h2>
+        <h2 className="text-xl font-extrabold text-ink">{bill.business_name || bill.shop_name || "Bill"}</h2>
+        {bill.business_address && (
+          <p className="mt-1.5 text-base font-semibold text-ink-soft whitespace-pre-wrap leading-tight">{bill.business_address}</p>
+        )}
+        {bill.business_phone && (
+          <p className="mt-1 text-base font-semibold text-ink-soft">Contact: {bill.business_phone}</p>
+        )}
         <p className="mt-1 text-base text-ink-soft">{formatDateTime(bill.created_at)}</p>
+        {bill.salesperson_email && (
+          <p className="mt-1 text-sm font-semibold text-ink-soft">
+            Billed by: <span className="text-ink">{bill.salesperson_email}</span>
+          </p>
+        )}
         <div className="mt-2 flex items-center justify-center gap-2">
           <span className="text-sm font-mono text-ink-soft">#{bill.id.slice(0, 8).toUpperCase()}</span>
         </div>
@@ -33,6 +44,14 @@ export function BillReceipt({ bill }: { bill: BillDetail }) {
           <div className="text-sm font-semibold text-ink-soft">Customer</div>
           <div className="text-lg font-bold text-ink">{bill.customer_name}</div>
           {bill.customer_phone && <div className="text-base text-ink-soft">{bill.customer_phone}</div>}
+        </div>
+      )}
+
+      {/* Remarks */}
+      {bill.remarks && (
+        <div className="rounded-control bg-surface-muted px-4 py-3">
+          <div className="text-sm font-semibold text-ink-soft">Remarks</div>
+          <div className="text-base font-medium text-ink break-words whitespace-pre-wrap">{bill.remarks}</div>
         </div>
       )}
 
@@ -79,7 +98,13 @@ export function BillReceipt({ bill }: { bill: BillDetail }) {
             <span className="text-lg font-bold text-ink">{formatINR(upi)}</span>
           </div>
         )}
-        {cash === 0 && upi === 0 && (
+        {bill.due_amount && toPaise(bill.due_amount) > 0 && (
+          <div className="flex items-center justify-between">
+            <span className="text-lg font-semibold text-danger">Due</span>
+            <span className="text-lg font-bold text-ink">{formatINR(toPaise(bill.due_amount))}</span>
+          </div>
+        )}
+        {cash === 0 && upi === 0 && (!bill.due_amount || toPaise(bill.due_amount) === 0) && (
           <div className="flex items-center justify-between">
             <span className="text-lg font-semibold text-ink-soft">Cash</span>
             <span className="text-lg font-bold text-ink">{formatINR(0)}</span>

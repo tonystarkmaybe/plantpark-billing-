@@ -25,6 +25,11 @@ export function BillRow({ bill, onOpen }: BillRowProps) {
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className="text-lg font-bold text-ink">{when}</span>
+          {bill.is_edited && (
+            <span className="inline-flex items-center rounded-full bg-warning-soft px-1.5 py-0.5 text-xs font-semibold text-warning">
+              Edited
+            </span>
+          )}
         </div>
         <div className="mt-0.5 truncate text-base text-ink-soft">
           {customer} · {itemLabel}

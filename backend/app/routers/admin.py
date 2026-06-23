@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -24,11 +24,11 @@ from app.schemas.admin import (
     AdminCustomerRow,
     OwnerInfo,
     ResetPasswordRequest,
-    ShopActivateRequest,
     ShopCreateRequest,
     ShopCreateResponse,
     ShopListRow,
     ShopSummary,
+    ShopUpdateRequest,
 )
 
 router = APIRouter(
@@ -99,6 +99,7 @@ def list_shops(db: Session = Depends(get_db)) -> list[ShopListRow]:
             Shop.owner_phone,
             Shop.is_active,
             Shop.created_at,
+            Shop.settings,
             User.email.label("owner_email"),
         )
         .outerjoin(User, (User.shop_id == Shop.id) & (User.role == ROLE_SHOP_OWNER))
@@ -113,6 +114,7 @@ def list_shops(db: Session = Depends(get_db)) -> list[ShopListRow]:
             owner_email=r.owner_email,
             is_active=r.is_active,
             created_at=r.created_at,
+            whatsapp_auto_send=r.settings.get("whatsapp_auto_send", False) if r.settings else False,
         )
         for r in rows
     ]
@@ -158,19 +160,86 @@ def list_all_customers(
     return AdminCustomerList(items=items, total=total, limit=limit, offset=offset)
 
 
+@router.get("/customers/download")
+def download_all_customers_csv(
+    db: Session = Depends(get_db),
+    q: str | None = Query(default=None),
+    shop_id: uuid.UUID | None = Query(default=None),
+    _admin: User = Depends(require_admin),
+):
+    """Download all customers matching filters as a CSV file (admin only)."""
+    import csv
+    import io
+    from fastapi.responses import StreamingResponse
+
+    base = select(Customer, Shop.name.label("shop_name")).join(Shop, Shop.id == Customer.shop_id)
+    if q:
+        like = f"%{q}%"
+        base = base.where(or_(Customer.name.ilike(like), Customer.phone.ilike(like)))
+    if shop_id is not None:
+        base = base.where(Customer.shop_id == shop_id)
+
+    rows = db.execute(base.order_by(Customer.created_at.desc())).all()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    writer.writerow(["Admin Customer Database Export"])
+    writer.writerow([])
+    writer.writerow(["Name", "Phone Number", "Nursery / Shop", "Joined Date"])
+    for c, shop_name in rows:
+        joined_str = c.created_at.strftime("%Y-%m-%d") if c.created_at else ""
+        writer.writerow([c.name, c.phone or "—", shop_name, joined_str])
+
+    output.seek(0)
+    headers = {
+        "Content-Disposition": "attachment; filename=admin_customers_export.csv"
+    }
+    return StreamingResponse(
+        io.BytesIO(output.getvalue().encode("utf-8")),
+        media_type="text/csv",
+        headers=headers
+    )
+
+
 @router.patch("/shops/{shop_id}", response_model=ShopSummary)
-def set_shop_active(
+def update_shop(
     shop_id: uuid.UUID,
-    payload: ShopActivateRequest,
+    payload: ShopUpdateRequest,
     db: Session = Depends(get_db),
 ) -> Shop:
     shop = db.execute(select(Shop).where(Shop.id == shop_id)).scalar_one_or_none()
     if shop is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Shop not found")
-    shop.is_active = payload.is_active
+    if payload.is_active is not None:
+        shop.is_active = payload.is_active
+    if payload.whatsapp_auto_send is not None:
+        shop.whatsapp_auto_send = payload.whatsapp_auto_send
+    if payload.business_name is not None:
+        shop.business_name = payload.business_name
+    if payload.business_address is not None:
+        shop.business_address = payload.business_address
+    if payload.business_phone is not None:
+        shop.business_phone = payload.business_phone
+    if payload.business_email is not None:
+        shop.business_email = payload.business_email
+    if payload.business_upi is not None:
+        shop.business_upi = payload.business_upi
     db.flush()
     db.refresh(shop)
     return shop
+
+
+@router.delete("/shops/{shop_id}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
+def delete_shop(
+    shop_id: uuid.UUID,
+    db: Session = Depends(get_db),
+):
+    shop = db.execute(select(Shop).where(Shop.id == shop_id)).scalar_one_or_none()
+    if shop is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Shop not found")
+    db.delete(shop)
+    db.flush()
 
 
 @router.post("/shops/{shop_id}/reset-password", response_model=OwnerInfo)
@@ -191,3 +260,14 @@ def reset_owner_password(
     db.flush()
     db.refresh(owner)
     return owner
+
+
+@router.get("/shops/{shop_id}/users", response_model=list[OwnerInfo])
+def list_shop_users(
+    shop_id: uuid.UUID,
+    db: Session = Depends(get_db),
+) -> list[User]:
+    """List all users (owners and salespeople) for a given shop."""
+    stmt = select(User).where(User.shop_id == shop_id).order_by(User.role.asc(), User.created_at.desc())
+    return list(db.execute(stmt).scalars().all())
+

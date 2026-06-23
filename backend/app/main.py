@@ -17,6 +17,7 @@ from app.routers.admin import router as admin_router
 from app.routers.bills import router as bills_router
 from app.routers.customers import router as customers_router
 from app.routers.products import router as products_router
+from app.routers.shop_users import router as shop_users_router
 
 settings = get_settings()
 
@@ -56,3 +57,4 @@ app.include_router(admin_router)
 app.include_router(products_router)
 app.include_router(customers_router)
 app.include_router(bills_router)
+app.include_router(shop_users_router)

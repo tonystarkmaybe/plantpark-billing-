@@ -7,7 +7,13 @@ export interface ShopRow {
   owner_phone: string | null;
   owner_email: string | null;
   is_active: boolean;
+  whatsapp_auto_send: boolean;
   created_at: string;
+  business_name?: string | null;
+  business_address?: string | null;
+  business_phone?: string | null;
+  business_email?: string | null;
+  business_upi?: string | null;
 }
 
 export interface OwnerInfo {
@@ -64,8 +70,23 @@ export async function createShop(payload: ShopCreatePayload): Promise<ShopCreate
   return data;
 }
 
-export async function setShopActive(shopId: string, isActive: boolean): Promise<void> {
-  await api.patch(`/admin/shops/${shopId}`, { is_active: isActive });
+export async function updateShop(
+  shopId: string,
+  payload: {
+    is_active?: boolean;
+    whatsapp_auto_send?: boolean;
+    business_name?: string | null;
+    business_address?: string | null;
+    business_phone?: string | null;
+    business_email?: string | null;
+    business_upi?: string | null;
+  }
+): Promise<void> {
+  await api.patch(`/admin/shops/${shopId}`, payload);
+}
+
+export async function deleteShop(shopId: string): Promise<void> {
+  await api.delete(`/admin/shops/${shopId}`);
 }
 
 export async function resetOwnerPassword(shopId: string, newPassword: string): Promise<void> {
@@ -89,3 +110,29 @@ export async function listAdminCustomers(params: AdminCustomerParams): Promise<A
   const { data } = await api.get<AdminCustomerList>("/admin/customers", { params: query });
   return data;
 }
+
+export async function listShopUsers(shopId: string): Promise<OwnerInfo[]> {
+  const { data } = await api.get<OwnerInfo[]>(`/admin/shops/${shopId}/users`);
+  return data;
+}
+
+export async function downloadAdminCustomersCSV(params: AdminCustomerParams): Promise<void> {
+  const query: Record<string, string | number> = {};
+  if (params.q?.trim()) query.q = params.q.trim();
+  if (params.shop_id) query.shop_id = params.shop_id;
+
+  const { data } = await api.get("/admin/customers/download", {
+    params: query,
+    responseType: "blob",
+  });
+
+  const url = window.URL.createObjectURL(new Blob([data]));
+  const link = document.createElement("a");
+  link.href = url;
+  link.setAttribute("download", `admin_customers_export.csv`);
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
+}
+

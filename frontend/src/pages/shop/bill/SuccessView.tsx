@@ -18,12 +18,23 @@ export function SuccessView({ bill, onNewBill }: SuccessViewProps) {
   const reduce = useReducedMotion();
   const cash = toPaise(bill.cash_amount);
   const upi = toPaise(bill.upi_amount);
-  const payLabel =
-    cash > 0 && upi > 0
-      ? `Cash ${formatINR(cash)} + UPI ${formatINR(upi)}`
-      : upi > 0
-        ? "Paid by UPI"
-        : "Paid by Cash";
+  const due = bill.due_amount ? toPaise(bill.due_amount) : 0;
+
+  const channels = [];
+  if (cash > 0) channels.push(`Cash ${formatINR(cash)}`);
+  if (upi > 0) channels.push(`UPI ${formatINR(upi)}`);
+  if (due > 0) channels.push(`Due ${formatINR(due)}`);
+
+  let payLabel = channels.join(" + ");
+  if (!payLabel) {
+    payLabel = "Paid by Cash";
+  } else if (cash > 0 && upi === 0 && due === 0) {
+    payLabel = "Paid by Cash";
+  } else if (upi > 0 && cash === 0 && due === 0) {
+    payLabel = "Paid by UPI";
+  } else if (due > 0 && cash === 0 && upi === 0) {
+    payLabel = `Due ${formatINR(due)}`;
+  }
 
   const when = new Date(bill.created_at);
   const timeLabel = isNaN(when.getTime())
@@ -51,9 +62,10 @@ export function SuccessView({ bill, onNewBill }: SuccessViewProps) {
         <div className="mt-1 text-base text-ink-soft">For {bill.customer_name}</div>
       )}
 
-      <div className="mt-2 text-base text-ink-soft">
+      <div className="mt-2 text-base text-ink-soft font-medium">
         {billRef}
         {timeLabel && <> · {timeLabel}</>}
+        {bill.salesperson_email && <> · Billed by: {bill.salesperson_email}</>}
       </div>
 
       <div className="mt-8 w-full max-w-xs space-y-3">

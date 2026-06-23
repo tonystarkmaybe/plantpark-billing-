@@ -1,6 +1,7 @@
 import { NavLink } from "react-router-dom";
 import { motion, useReducedMotion } from "motion/react";
-import { BarChart3, MoreHorizontal, Package, ReceiptText, type LucideIcon } from "lucide-react";
+import { BarChart3, MoreHorizontal, Package, ReceiptText, Users, type LucideIcon } from "lucide-react";
+import { useAuth } from "@/store/auth";
 
 interface NavItem {
   to: string;
@@ -14,6 +15,7 @@ const items: NavItem[] = [
   { to: "/app/bill", label: "Bill", Icon: ReceiptText },
   { to: "/app/products", label: "Products", Icon: Package },
   { to: "/app/sales", label: "Sales", Icon: BarChart3 },
+  { to: "/app/customers", label: "Customers", Icon: Users },
   { to: "/app/more", label: "More", Icon: MoreHorizontal },
 ];
 
@@ -24,6 +26,12 @@ const items: NavItem[] = [
  */
 export function BottomNav() {
   const reduce = useReducedMotion();
+  const user = useAuth((s) => s.user);
+
+  const filteredItems = items.filter(
+    (item) => !(item.to === "/app/bill" && user?.role === "shop_owner")
+  );
+
   return (
     <nav
       className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-white/90 backdrop-blur-lg
@@ -31,7 +39,7 @@ export function BottomNav() {
       aria-label="Primary"
     >
       <ul className="mx-auto flex max-w-screen-sm">
-        {items.map(({ to, label, Icon }) => (
+        {filteredItems.map(({ to, label, Icon }) => (
           <li key={to} className="flex-1">
             <NavLink
               to={to}

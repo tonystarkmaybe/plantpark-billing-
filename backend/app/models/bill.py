@@ -4,7 +4,7 @@ import datetime as dt
 import decimal
 import uuid
 
-from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, Text, text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, Text, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -43,6 +43,9 @@ class Bill(Base):
     upi_amount: Mapped[decimal.Decimal] = mapped_column(
         Numeric(12, 2), nullable=False, server_default=text("0")
     )
+    due_amount: Mapped[decimal.Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False, server_default=text("0")
+    )
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),
@@ -57,6 +60,10 @@ class Bill(Base):
     whatsapp_last_status: Mapped[str | None] = mapped_column(Text, nullable=True)
     whatsapp_sent_at: Mapped[dt.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+    remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_edited: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
     )
     created_at: Mapped[dt.datetime] = created_at_col()
 

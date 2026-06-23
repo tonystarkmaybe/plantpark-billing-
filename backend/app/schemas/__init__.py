@@ -3,7 +3,7 @@ from app.schemas.admin import (
     ShopCreateRequest,
     ShopCreateResponse,
     ShopSummary,
-    ShopActivateRequest,
+    ShopUpdateRequest,
     ResetPasswordRequest,
     OwnerInfo,
 )
@@ -16,7 +16,7 @@ __all__ = [
     "ShopCreateRequest",
     "ShopCreateResponse",
     "ShopSummary",
-    "ShopActivateRequest",
+    "ShopUpdateRequest",
     "ResetPasswordRequest",
     "OwnerInfo",
 ]

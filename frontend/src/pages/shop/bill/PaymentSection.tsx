@@ -8,9 +8,11 @@ interface PaymentSectionProps {
   method: PayMethod | null;
   cash: string;
   upi: string;
+  due: string;
   setMethod: (m: PayMethod) => void;
   setCash: (v: string) => void;
   setUpi: (v: string) => void;
+  setDue: (v: string) => void;
 }
 
 /**
@@ -23,20 +25,28 @@ export function PaymentSection({
   method,
   cash,
   upi,
+  due,
   setMethod,
   setCash,
   setUpi,
+  setDue,
 }: PaymentSectionProps) {
   // Keep one-tap methods exact as the total changes (e.g. discount edited later).
   useEffect(() => {
     if (method === "cash") {
       setCash(fromPaise(totalPaise));
       setUpi("0");
+      setDue("0");
     } else if (method === "upi") {
       setCash("0");
       setUpi(fromPaise(totalPaise));
+      setDue("0");
+    } else if (method === "due") {
+      setCash("0");
+      setUpi("0");
+      setDue(fromPaise(totalPaise));
     }
-    // Intentionally not depending on cash/upi — only react to total/method.
+    // Intentionally not depending on cash/upi/due — only react to total/method.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [totalPaise, method]);
 
@@ -45,30 +55,41 @@ export function PaymentSection({
     if (m === "split") {
       setCash(fromPaise(totalPaise));
       setUpi("0");
+      setDue("0");
     }
   };
 
   const editCash = (v: string) => {
     setCash(v);
-    setUpi(fromPaise(Math.max(0, totalPaise - toPaise(v))));
+    const remaining = Math.max(0, totalPaise - toPaise(v) - toPaise(due));
+    setUpi(fromPaise(remaining));
   };
   const editUpi = (v: string) => {
     setUpi(v);
-    setCash(fromPaise(Math.max(0, totalPaise - toPaise(v))));
+    const remaining = Math.max(0, totalPaise - toPaise(v) - toPaise(due));
+    setCash(fromPaise(remaining));
+  };
+  const editDue = (v: string) => {
+    setDue(v);
+    const remaining = Math.max(0, totalPaise - toPaise(cash) - toPaise(v));
+    setUpi(fromPaise(remaining));
   };
 
-  const sumPaise = toPaise(cash) + toPaise(upi);
+  const sumPaise = toPaise(cash) + toPaise(upi) + toPaise(due);
   const balanced = sumPaise === totalPaise;
 
   return (
     <div>
       <span className="mb-2 block text-base font-semibold text-ink">Payment</span>
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-4 gap-2">
         <MethodButton active={method === "cash"} accent="cash" onClick={() => select("cash")}>
           Cash
         </MethodButton>
         <MethodButton active={method === "upi"} accent="upi" onClick={() => select("upi")}>
           UPI
+        </MethodButton>
+        <MethodButton active={method === "due"} accent="neutral" onClick={() => select("due")}>
+          Due
         </MethodButton>
         <MethodButton active={method === "split"} accent="neutral" onClick={() => select("split")}>
           Split
@@ -79,6 +100,7 @@ export function PaymentSection({
         <div className="mt-4 space-y-3">
           <SplitField label="Cash" accent="cash" value={cash} onChange={editCash} />
           <SplitField label="UPI" accent="upi" value={upi} onChange={editUpi} />
+          <SplitField label="Due" accent="due" value={due} onChange={editDue} />
           <div
             className={[
               "flex items-center justify-between rounded-control px-4 py-3 text-base font-semibold",
@@ -88,7 +110,7 @@ export function PaymentSection({
           >
             <span className="flex items-center gap-1.5">
               {balanced && <Check className="h-5 w-5" strokeWidth={3} />}
-              {balanced ? "Balances to total" : "Cash + UPI must equal the total"}
+              {balanced ? "Balances to total" : "Cash + UPI + Due must equal the total"}
             </span>
             <span>
               {formatINR(sumPaise)} / {formatINR(totalPaise)}
@@ -145,13 +167,19 @@ function SplitField({
   onChange,
 }: {
   label: string;
-  accent: "cash" | "upi";
+  accent: "cash" | "upi" | "due";
   value: string;
   onChange: (v: string) => void;
 }) {
+  const accentClass =
+    accent === "cash"
+      ? "text-cash"
+      : accent === "upi"
+        ? "text-upi"
+        : "text-danger";
   return (
     <div className="flex items-center gap-3">
-      <span className={`w-16 text-lg font-bold ${accent === "cash" ? "text-cash" : "text-upi"}`}>{label}</span>
+      <span className={`w-16 text-lg font-bold ${accentClass}`}>{label}</span>
       <span className="text-xl font-bold text-ink">₹</span>
       <input
         type="text"

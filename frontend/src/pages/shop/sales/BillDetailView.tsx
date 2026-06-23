@@ -1,15 +1,19 @@
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { ChevronLeft } from "lucide-react";
-import { fetchBillDetail, type BillDetail } from "@/api/sales";
+import { fetchBillDetail, deleteBill, type BillDetail } from "@/api/sales";
 import { friendlyError } from "@/api/client";
 import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/Button";
 import { BillReceipt } from "./BillReceipt";
+import { useAuth } from "@/store/auth";
+import { EditBillSheet } from "./EditBillSheet";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 interface BillDetailViewProps {
   billId: string | null;
   onClose: () => void;
+  onUpdated?: () => void;
 }
 
 /**
@@ -17,12 +21,19 @@ interface BillDetailViewProps {
  * fetches the bill, renders the shared receipt, and hosts the (placeholder)
  * Print / WhatsApp actions that later prompts will wire up.
  */
-export function BillDetailView({ billId, onClose }: BillDetailViewProps) {
+export function BillDetailView({ billId, onClose, onUpdated }: BillDetailViewProps) {
   const reduce = useReducedMotion();
   const [bill, setBill] = useState<BillDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const user = useAuth((s) => s.user);
+  const canEdit = user?.role === "shop_owner" || user?.role === "admin";
+  const canDelete = user?.role === "admin";
 
   useEffect(() => {
     if (!billId) return;
@@ -56,6 +67,26 @@ export function BillDetailView({ billId, onClose }: BillDetailViewProps) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [billId, onClose]);
+
+  const handleBillUpdated = (updatedBill: BillDetail) => {
+    setBill(updatedBill);
+    if (onUpdated) onUpdated();
+  };
+
+  const handleDelete = async () => {
+    if (!billId) return;
+    setDeleting(true);
+    try {
+      await deleteBill(billId);
+      setDeleteConfirm(false);
+      if (onUpdated) onUpdated();
+      onClose();
+    } catch (e) {
+      alert(friendlyError(e, "Failed to delete the bill."));
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   return (
     <AnimatePresence>
@@ -110,24 +141,71 @@ export function BillDetailView({ billId, onClose }: BillDetailViewProps) {
             ) : null}
           </div>
 
-          {/* Actions — disabled placeholders for later prompts. */}
+          {/* Actions */}
           {bill && !loading && (
             <div className="border-t border-border bg-surface px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-              <div className="mx-auto grid w-full max-w-screen-sm grid-cols-2 gap-3">
-                <Button variant="secondary" size="action" disabled>
-                  Print
-                  <span className="ml-1 rounded-full bg-surface-muted px-2 py-0.5 text-sm font-semibold text-ink-soft">
-                    Soon
-                  </span>
-                </Button>
-                <Button variant="secondary" size="action" disabled>
-                  WhatsApp
-                  <span className="ml-1 rounded-full bg-surface-muted px-2 py-0.5 text-sm font-semibold text-ink-soft">
-                    Soon
-                  </span>
-                </Button>
+              <div className="mx-auto flex flex-col w-full max-w-screen-sm gap-3">
+                {(canEdit || canDelete) && (
+                  <div className="flex gap-3">
+                    {canEdit && (
+                      <Button
+                        variant="primary"
+                        size="action"
+                        onClick={() => setEditOpen(true)}
+                        className={`${canDelete ? "flex-1" : "w-full"} font-bold`}
+                      >
+                        Edit Bill
+                      </Button>
+                    )}
+                    {canDelete && (
+                      <Button
+                        variant="ghost"
+                        size="action"
+                        onClick={() => setDeleteConfirm(true)}
+                        className={`${canEdit ? "flex-1" : "w-full"} font-bold !text-danger hover:!bg-danger-soft border-2 border-danger/20 hover:border-danger/30`}
+                      >
+                        Delete Bill
+                      </Button>
+                    )}
+                  </div>
+                )}
+                <div className="grid grid-cols-2 gap-3">
+                  <Button variant="secondary" size="action" disabled>
+                    Print
+                    <span className="ml-1 rounded-full bg-surface-muted px-2 py-0.5 text-sm font-semibold text-ink-soft">
+                      Soon
+                    </span>
+                  </Button>
+                  <Button variant="secondary" size="action" disabled>
+                    WhatsApp
+                    <span className="ml-1 rounded-full bg-surface-muted px-2 py-0.5 text-sm font-semibold text-ink-soft">
+                      Soon
+                    </span>
+                  </Button>
+                </div>
               </div>
             </div>
+          )}
+
+          {bill && (
+            <EditBillSheet
+              open={editOpen}
+              onClose={() => setEditOpen(false)}
+              bill={bill}
+              onUpdated={handleBillUpdated}
+            />
+          )}
+
+          {bill && (
+            <ConfirmDialog
+              open={deleteConfirm}
+              title="Delete Bill"
+              body="Are you sure you want to delete this bill? This action is permanent and cannot be undone."
+              confirmLabel={deleting ? "Deleting..." : "Delete"}
+              destructive
+              onConfirm={handleDelete}
+              onCancel={() => !deleting && setDeleteConfirm(false)}
+            />
           )}
         </motion.div>
       )}

@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from app.database import get_rls_session
 from app.auth.security import decode_access_token
 from app.models.shop import Shop
-from app.models.user import ROLE_ADMIN, ROLE_SHOP_OWNER, User
+from app.models.user import ROLE_ADMIN, ROLE_SHOP_OWNER, ROLE_SALESPERSON, User
 from app.schemas.auth import TokenData
 
 _bearer = HTTPBearer(auto_error=True)
@@ -57,8 +57,8 @@ def get_current_user(
     if user is None or not user.is_active:
         raise _credentials_exc
 
-    # Reject shop owners whose shop has been deactivated.
-    if user.role == ROLE_SHOP_OWNER:
+    # Reject shop users whose shop has been deactivated.
+    if user.role in (ROLE_SHOP_OWNER, ROLE_SALESPERSON):
         shop = db.execute(select(Shop).where(Shop.id == user.shop_id)).scalar_one_or_none()
         if shop is None or not shop.is_active:
             raise HTTPException(
@@ -78,9 +78,36 @@ def require_admin(user: User = Depends(get_current_user)) -> User:
 
 
 def require_shop_owner(user: User = Depends(get_current_user)) -> User:
+    if user.role not in (ROLE_SHOP_OWNER, ROLE_SALESPERSON):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Shop access privileges required",
+        )
+    return user
+
+
+def require_shop_or_admin(user: User = Depends(get_current_user)) -> User:
+    if user.role not in (ROLE_ADMIN, ROLE_SHOP_OWNER, ROLE_SALESPERSON):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access privileges required",
+        )
+    return user
+
+
+def require_shop_owner_only(user: User = Depends(get_current_user)) -> User:
     if user.role != ROLE_SHOP_OWNER:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Shop owner privileges required",
+        )
+    return user
+
+
+def require_shop_owner_or_admin(user: User = Depends(get_current_user)) -> User:
+    if user.role not in (ROLE_ADMIN, ROLE_SHOP_OWNER):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Shop owner or admin privileges required",
         )
     return user

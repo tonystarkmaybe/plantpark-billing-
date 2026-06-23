@@ -46,7 +46,9 @@ def _build_message(bill: Bill, items: list[BillItem], shop: Shop | None, custome
             total=bill.total,
             cash_amount=bill.cash_amount,
             upi_amount=bill.upi_amount,
+            due_amount=bill.due_amount,
             customer_name=customer.name if customer else None,
+            remarks=bill.remarks,
         )
     )
 

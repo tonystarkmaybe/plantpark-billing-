@@ -1,6 +1,6 @@
 import { api } from "./client";
 
-export type PaymentMethod = "cash" | "upi" | "split";
+export type PaymentMethod = "cash" | "upi" | "split" | "due";
 
 export interface BillSummary {
   date: string; // YYYY-MM-DD (shop timezone)
@@ -8,6 +8,7 @@ export interface BillSummary {
   bill_count: number;
   cash_total: string;
   upi_total: string;
+  due_total: string;
 }
 
 export interface BillListItem {
@@ -17,6 +18,7 @@ export interface BillListItem {
   customer_name: string | null;
   item_count: number;
   payment_method: PaymentMethod;
+  is_edited: boolean;
 }
 
 export interface BillListResponse {
@@ -37,6 +39,9 @@ export interface BillDetailItem {
 export interface BillDetail {
   id: string;
   shop_name: string | null;
+  business_name: string | null;
+  business_address: string | null;
+  business_phone: string | null;
   subtotal: string;
   discount_type: "flat" | "percent";
   discount_value: string;
@@ -44,18 +49,26 @@ export interface BillDetail {
   total: string;
   cash_amount: string;
   upi_amount: string;
+  due_amount: string;
   payment_method: PaymentMethod;
   customer_id: string | null;
   customer_name: string | null;
   customer_phone: string | null;
+  salesperson_email: string | null;
+  remarks: string | null;
+  is_edited: boolean;
   created_at: string;
   items: BillDetailItem[];
 }
 
 /** date optional (YYYY-MM-DD, shop time). Defaults to today on the server. */
-export async function fetchTodaySummary(date?: string): Promise<BillSummary> {
+export async function fetchTodaySummary(date?: string, createdBy?: string, shopId?: string): Promise<BillSummary> {
+  const query: Record<string, string> = {};
+  if (date) query.date = date;
+  if (createdBy) query.created_by = createdBy;
+  if (shopId) query.shop_id = shopId;
   const { data } = await api.get<BillSummary>("/bills/summary/today", {
-    params: date ? { date } : {},
+    params: query,
   });
   return data;
 }
@@ -63,17 +76,23 @@ export async function fetchTodaySummary(date?: string): Promise<BillSummary> {
 export interface BillListParams {
   date_from?: string;
   date_to?: string;
+  created_by?: string;
+  is_edited?: boolean;
+  shop_id?: string;
   limit?: number;
   offset?: number;
 }
 
 export async function fetchBills(params: BillListParams): Promise<BillListResponse> {
-  const query: Record<string, string | number> = {
+  const query: Record<string, string | number | boolean> = {
     limit: params.limit ?? 20,
     offset: params.offset ?? 0,
   };
   if (params.date_from) query.date_from = params.date_from;
   if (params.date_to) query.date_to = params.date_to;
+  if (params.created_by) query.created_by = params.created_by;
+  if (params.is_edited !== undefined) query.is_edited = params.is_edited;
+  if (params.shop_id) query.shop_id = params.shop_id;
   const { data } = await api.get<BillListResponse>("/bills", { params: query });
   return data;
 }
@@ -81,4 +100,105 @@ export async function fetchBills(params: BillListParams): Promise<BillListRespon
 export async function fetchBillDetail(id: string): Promise<BillDetail> {
   const { data } = await api.get<BillDetail>(`/bills/${id}`);
   return data;
+}
+
+export interface CategorySales {
+  category: string | null;
+  quantity: number;
+  total_sales: string;
+}
+
+export interface ProductSales {
+  product_name: string;
+  quantity: number;
+  total_sales: string;
+}
+
+export interface DetailedReportResponse {
+  start_date: string;
+  end_date: string;
+  total_sales: string;
+  bill_count: number;
+  cash_total: string;
+  upi_total: string;
+  due_total: string;
+  average_bill_value: string;
+  categories: CategorySales[];
+  top_products: ProductSales[];
+}
+
+export interface ReportQueryParams {
+  date_from?: string;
+  date_to?: string;
+  created_by?: string;
+  shopId?: string;
+}
+
+export async function fetchDetailedReport(params: ReportQueryParams): Promise<DetailedReportResponse> {
+  const query: Record<string, string> = {};
+  if (params.date_from) query.date_from = params.date_from;
+  if (params.date_to) query.date_to = params.date_to;
+  if (params.created_by) query.created_by = params.created_by;
+  if (params.shopId) query.shop_id = params.shopId;
+  const { data } = await api.get<DetailedReportResponse>("/bills/summary/report", { params: query });
+  return data;
+}
+
+export async function downloadReportCSV(params: ReportQueryParams): Promise<void> {
+  const query: Record<string, string> = {};
+  if (params.date_from) query.date_from = params.date_from;
+  if (params.date_to) query.date_to = params.date_to;
+  if (params.created_by) query.created_by = params.created_by;
+  if (params.shopId) query.shop_id = params.shopId;
+
+  const { data } = await api.get("/bills/summary/report/download", {
+    params: query,
+    responseType: "blob",
+  });
+
+  const url = window.URL.createObjectURL(new Blob([data]));
+  const link = document.createElement("a");
+  link.href = url;
+
+  const filename = `sales_report_${params.date_from || "start"}_to_${params.date_to || "end"}.csv`;
+  link.setAttribute("download", filename);
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(url);
+}
+
+export interface SendReportWhatsAppPayload {
+  phone: string;
+  date_from?: string;
+  date_to?: string;
+  created_by?: string;
+  shop_id?: string;
+}
+
+export interface SendWhatsAppResult {
+  status: "sent_via_openwa" | "fallback_wa_me" | "disabled" | "not_eligible";
+  wa_me_url: string | null;
+  detail: string;
+}
+
+export async function sendReportWhatsApp(payload: SendReportWhatsAppPayload): Promise<SendWhatsAppResult> {
+  const { data } = await api.post<SendWhatsAppResult>("/bills/summary/report/send-whatsapp", payload);
+  return data;
+}
+
+export interface BillUpdatePayload {
+  cash_amount?: number;
+  upi_amount?: number;
+  due_amount?: number;
+  remarks?: string | null;
+}
+
+export async function editBill(id: string, payload: BillUpdatePayload): Promise<BillDetail> {
+  const { data } = await api.patch<BillDetail>(`/bills/${id}`, payload);
+  return data;
+}
+
+export async function deleteBill(id: string): Promise<void> {
+  await api.delete(`/bills/${id}`);
 }

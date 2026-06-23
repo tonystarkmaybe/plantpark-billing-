@@ -34,9 +34,18 @@ class BillCreate(BaseModel):
     discount_value: MoneyIn = Field(default=0)  # type: ignore[assignment]
     cash_amount: MoneyIn = Field(default=0)  # type: ignore[assignment]
     upi_amount: MoneyIn = Field(default=0)  # type: ignore[assignment]
+    due_amount: MoneyIn = Field(default=0)  # type: ignore[assignment]
+    remarks: str | None = None
     # Customer is always entered fresh per bill (name + optional phone) and is
     # optional. The "select existing customer" feature has been removed.
     new_customer: NewCustomerIn | None = None
+
+
+class BillUpdate(BaseModel):
+    cash_amount: MoneyIn | None = None
+    upi_amount: MoneyIn | None = None
+    due_amount: MoneyIn | None = None
+    remarks: str | None = None
 
 
 # ── Response ─────────────────────────────────────────────────────────────────
@@ -60,9 +69,13 @@ class BillOut(BaseModel):
     total: MoneyOut
     cash_amount: MoneyOut
     upi_amount: MoneyOut
+    due_amount: MoneyOut
     customer_id: uuid.UUID | None
     customer_name: str | None = None
     created_by: uuid.UUID | None
+    salesperson_email: str | None = None
+    remarks: str | None = None
+    is_edited: bool = False
     created_at: dt.datetime
     items: list[BillItemOut]
     # True when this response replays a previously-saved bill (idempotent retry).
@@ -74,7 +87,7 @@ class BillOut(BaseModel):
 
 
 # ── Sales tab: summary, history list, detail ─────────────────────────────────
-PaymentMethod = Literal["cash", "upi", "split"]
+PaymentMethod = Literal["cash", "upi", "split", "due"]
 
 
 class BillSummaryOut(BaseModel):
@@ -85,6 +98,7 @@ class BillSummaryOut(BaseModel):
     bill_count: int
     cash_total: MoneyOut
     upi_total: MoneyOut
+    due_total: MoneyOut
 
 
 class BillListItem(BaseModel):
@@ -97,6 +111,7 @@ class BillListItem(BaseModel):
     customer_name: str | None = None
     item_count: int
     payment_method: PaymentMethod
+    is_edited: bool = False
 
 
 class BillListOut(BaseModel):
@@ -111,6 +126,9 @@ class BillDetailOut(BaseModel):
 
     id: uuid.UUID
     shop_name: str | None = None
+    business_name: str | None = None
+    business_address: str | None = None
+    business_phone: str | None = None
     bill_type: str
     subtotal: MoneyOut
     discount_type: str
@@ -119,9 +137,13 @@ class BillDetailOut(BaseModel):
     total: MoneyOut
     cash_amount: MoneyOut
     upi_amount: MoneyOut
+    due_amount: MoneyOut
     payment_method: PaymentMethod
     customer_id: uuid.UUID | None
     customer_name: str | None = None
     customer_phone: str | None = None
+    salesperson_email: str | None = None
+    remarks: str | None = None
+    is_edited: bool = False
     created_at: dt.datetime
     items: list[BillItemOut]

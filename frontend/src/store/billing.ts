@@ -2,7 +2,7 @@ import { create } from "zustand";
 import type { Product } from "@/api/types";
 import type { DiscountType } from "@/lib/money";
 
-export type PayMethod = "cash" | "upi" | "split";
+export type PayMethod = "cash" | "upi" | "split" | "due";
 
 export interface CartLine {
   product_id: string;
@@ -25,12 +25,14 @@ interface BillingState {
   payMethod: PayMethod | null;
   cash: string;
   upi: string;
+  due: string;
   customer: CustomerInput;
+  remarks: string;
   /** Generated when the user first attempts to save; reused for retries of THIS cart. */
   idempotencyKey: string | null;
 
-  /** Tap a product: add a line at its saved price (or +1 if already in the cart). */
-  addUnit: (p: Product) => void;
+  /** Tap a product: add a line at its saved price (or +qty if already in the cart). */
+  addUnit: (p: Product, quantity?: number) => void;
   setQuantity: (productId: string, quantity: number) => void;
   setLinePrice: (productId: string, unitPrice: string) => void;
   removeLine: (productId: string) => void;
@@ -40,7 +42,9 @@ interface BillingState {
   setPayMethod: (m: PayMethod) => void;
   setCash: (v: string) => void;
   setUpi: (v: string) => void;
+  setDue: (v: string) => void;
   setCustomer: (c: CustomerInput) => void;
+  setRemarks: (v: string) => void;
 
   ensureIdempotencyKey: () => string;
   resetForNewBill: () => void;
@@ -59,20 +63,22 @@ const initial = {
   payMethod: null as PayMethod | null,
   cash: "",
   upi: "",
+  due: "",
   customer: { name: "", phone: "" } as CustomerInput,
+  remarks: "",
   idempotencyKey: null as string | null,
 };
 
 export const useBilling = create<BillingState>((set, get) => ({
   ...initial,
 
-  addUnit: (p) =>
+  addUnit: (p, quantity = 1) =>
     set((s) => {
       const existing = s.lines.find((l) => l.product_id === p.id);
       if (existing) {
         return {
           lines: s.lines.map((l) =>
-            l.product_id === p.id ? { ...l, quantity: l.quantity + 1 } : l,
+            l.product_id === p.id ? { ...l, quantity: l.quantity + quantity } : l,
           ),
         };
       }
@@ -83,7 +89,7 @@ export const useBilling = create<BillingState>((set, get) => ({
             product_id: p.id,
             product_name: p.name,
             unit_price: p.retail_price, // pre-fill from the product's saved price
-            quantity: 1,
+            quantity,
             photo_url: p.photo_url,
           },
         ],
@@ -114,7 +120,9 @@ export const useBilling = create<BillingState>((set, get) => ({
   setPayMethod: (m) => set({ payMethod: m }),
   setCash: (v) => set({ cash: v }),
   setUpi: (v) => set({ upi: v }),
+  setDue: (v) => set({ due: v }),
   setCustomer: (c) => set({ customer: c }),
+  setRemarks: (v) => set({ remarks: v }),
 
   ensureIdempotencyKey: () => {
     const existing = get().idempotencyKey;

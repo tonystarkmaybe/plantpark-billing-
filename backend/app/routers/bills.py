@@ -22,7 +22,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import get_db, require_shop_owner
+from app.auth.dependencies import get_db, require_shop_owner, require_shop_or_admin, require_shop_owner_only, require_shop_owner_or_admin, require_admin
 from app.config import get_settings
 from app.models.bill import Bill, BillItem
 from app.models.customer import Customer
@@ -37,10 +37,19 @@ from app.schemas.bill import (
     BillListOut,
     BillOut,
     BillSummaryOut,
+    BillUpdate,
 )
 from app.schemas.whatsapp import SendWhatsAppResult
+from app.schemas.report import (
+    CategorySales,
+    ProductSales,
+    DetailedReportResponse,
+    SendReportWhatsAppRequest,
+)
 from app.services.whatsapp.eligibility import apply_phone_consent
 from app.services.whatsapp.service import send_bill_whatsapp
+from app.services.whatsapp.backends import OpenWAClient, WaMeLinkBuilder
+from app.services.whatsapp.phone import normalize_indian_phone
 
 router = APIRouter(prefix="/bills", tags=["bills"])
 
@@ -52,9 +61,12 @@ ZERO = Decimal("0.00")
 SHOP_TZ = ZoneInfo("Asia/Kolkata")
 
 
-def _payment_method(cash: Decimal, upi: Decimal) -> str:
-    if cash > 0 and upi > 0:
+def _payment_method(cash: Decimal, upi: Decimal, due: Decimal = Decimal("0")) -> str:
+    channels = sum(1 for v in (cash, upi, due) if v > 0)
+    if channels > 1:
         return "split"
+    if due > 0:
+        return "due"
     if upi > 0:
         return "upi"
     return "cash"
@@ -80,7 +92,14 @@ def _http422(message: str) -> HTTPException:
     return HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=message)
 
 
-def _serialize(bill: Bill, items: list[BillItem], *, replay: bool, customer_name: str | None) -> BillOut:
+def _serialize(
+    bill: Bill,
+    items: list[BillItem],
+    *,
+    replay: bool,
+    customer_name: str | None,
+    salesperson_email: str | None = None,
+) -> BillOut:
     return BillOut(
         id=bill.id,
         bill_type=bill.bill_type,
@@ -91,9 +110,13 @@ def _serialize(bill: Bill, items: list[BillItem], *, replay: bool, customer_name
         total=bill.total,
         cash_amount=bill.cash_amount,
         upi_amount=bill.upi_amount,
+        due_amount=bill.due_amount,
         customer_id=bill.customer_id,
         customer_name=customer_name,
         created_by=bill.created_by,
+        salesperson_email=salesperson_email,
+        remarks=bill.remarks,
+        is_edited=bill.is_edited,
         created_at=bill.created_at,
         items=[BillItemOut.model_validate(it) for it in items],
         idempotent_replay=replay,
@@ -108,8 +131,15 @@ def _customer_name(db: Session, customer_id) -> str | None:
     return c.name if c else None
 
 
+def _user_email(db: Session, user_id: uuid.UUID | None) -> str | None:
+    if user_id is None:
+        return None
+    u = db.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
+    return u.email if u else None
+
+
 @router.post("", response_model=BillOut)
-def create_bill(
+async def create_bill(
     payload: BillCreate,
     response: Response,
     db: Session = Depends(get_db),
@@ -124,9 +154,18 @@ def create_bill(
             db.execute(select(BillItem).where(BillItem.bill_id == existing.id)).scalars()
         )
         response.status_code = status.HTTP_200_OK
-        return _serialize(existing, items, replay=True, customer_name=_customer_name(db, existing.customer_id))
+        return _serialize(
+            existing,
+            items,
+            replay=True,
+            customer_name=_customer_name(db, existing.customer_id),
+            salesperson_email=_user_email(db, existing.created_by),
+        )
 
-    # 2) Resolve products (RLS-scoped to this shop) and recompute line totals.
+    # 2) Fetch shop details
+    shop = db.execute(select(Shop).where(Shop.id == owner.shop_id)).scalar_one_or_none()
+
+    # 3) Resolve products (RLS-scoped to this shop) and recompute line totals.
     product_ids = [it.product_id for it in payload.items]
     products = {
         p.id: p
@@ -174,9 +213,10 @@ def create_bill(
     # 4) Payment must balance exactly to the total.
     cash_amount = q2(payload.cash_amount)
     upi_amount = q2(payload.upi_amount)
-    if cash_amount + upi_amount != total:
+    due_amount = q2(payload.due_amount)
+    if cash_amount + upi_amount + due_amount != total:
         raise _http422(
-            f"Cash + UPI (₹{cash_amount + upi_amount:.2f}) must equal the total (₹{total:.2f})."
+            f"Cash + UPI + Due (₹{cash_amount + upi_amount + due_amount:.2f}) must equal the total (₹{total:.2f})."
         )
 
     # 5) Persist customer (if entered) + bill + items inside ONE savepoint, so a
@@ -194,6 +234,8 @@ def create_bill(
         total=total,
         cash_amount=cash_amount,
         upi_amount=upi_amount,
+        due_amount=due_amount,
+        remarks=payload.remarks,
         created_by=owner.id,
         idempotency_key=payload.idempotency_key,
     )
@@ -242,39 +284,63 @@ def create_bill(
             db.execute(select(BillItem).where(BillItem.bill_id == winner.id)).scalars()
         )
         response.status_code = status.HTTP_200_OK
-        return _serialize(winner, win_items, replay=True, customer_name=_customer_name(db, winner.customer_id))
+        return _serialize(
+            winner,
+            win_items,
+            replay=True,
+            customer_name=_customer_name(db, winner.customer_id),
+            salesperson_email=_user_email(db, winner.created_by),
+        )
 
     # If an existing customer was attached, fetch its name for the response.
     if customer_name is None and bill.customer_id is not None:
         customer_name = _customer_name(db, bill.customer_id)
 
+    # 6) Auto-send WhatsApp receipt if enabled.
+    if shop is not None and shop.whatsapp_auto_send:
+        await send_bill_whatsapp(db, bill, shop, get_settings())
+
     response.status_code = status.HTTP_201_CREATED
-    return _serialize(bill, bill_items, replay=False, customer_name=customer_name)
+    return _serialize(
+        bill,
+        bill_items,
+        replay=False,
+        customer_name=customer_name,
+        salesperson_email=owner.email,
+    )
 
 
 # ── Reads: today's summary, history list, detail ─────────────────────────────
 @router.get("/summary/today", response_model=BillSummaryOut)
 def summary_for_day(
     db: Session = Depends(get_db),
-    _owner: User = Depends(require_shop_owner),
+    user: User = Depends(require_shop_or_admin),
     date: dt.date | None = Query(default=None, description="Day in shop time (YYYY-MM-DD); defaults to today"),
+    created_by: uuid.UUID | None = Query(default=None, description="Filter by salesperson user ID"),
+    shop_id: uuid.UUID | None = Query(default=None, description="Restrict to a shop (admin only)"),
 ) -> BillSummaryOut:
     day = date or _today_ist()
     start, end = _ist_day_bounds_utc(day)
 
-    rows = db.execute(
-        select(Bill.total, Bill.cash_amount, Bill.upi_amount).where(
-            Bill.created_at >= start, Bill.created_at < end
-        )
-    ).all()
+    stmt = select(Bill.total, Bill.cash_amount, Bill.upi_amount, Bill.due_amount).where(
+        Bill.created_at >= start, Bill.created_at < end
+    )
+    if created_by is not None:
+        stmt = stmt.where(Bill.created_by == created_by)
+    if user.role == "admin" and shop_id is not None:
+        stmt = stmt.where(Bill.shop_id == shop_id)
+
+    rows = db.execute(stmt).all()
 
     total_sales = ZERO
     cash_total = ZERO
     upi_total = ZERO
-    for total, cash, upi in rows:
+    due_total = ZERO
+    for total, cash, upi, due in rows:
         total_sales += total
         cash_total += cash
         upi_total += upi
+        due_total += due
 
     return BillSummaryOut(
         date=day,
@@ -282,17 +348,21 @@ def summary_for_day(
         bill_count=len(rows),
         cash_total=q2(cash_total),
         upi_total=q2(upi_total),
+        due_total=q2(due_total),
     )
 
 
 @router.get("", response_model=BillListOut)
 def list_bills(
     db: Session = Depends(get_db),
-    _owner: User = Depends(require_shop_owner),
+    user: User = Depends(require_shop_or_admin),
     date_from: dt.date | None = Query(default=None, description="Inclusive start day (shop time)"),
     date_to: dt.date | None = Query(default=None, description="Inclusive end day (shop time)"),
     bill_type: str | None = Query(default=None, description="'retail' or 'wholesale'"),
     customer_id: uuid.UUID | None = Query(default=None),
+    created_by: uuid.UUID | None = Query(default=None, description="Filter by salesperson user ID"),
+    is_edited: bool | None = Query(default=None, description="Filter by whether the bill was edited"),
+    shop_id: uuid.UUID | None = Query(default=None, description="Restrict to a shop (admin only)"),
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ) -> BillListOut:
@@ -307,7 +377,9 @@ def list_bills(
             Bill.total,
             Bill.cash_amount,
             Bill.upi_amount,
+            Bill.due_amount,
             Customer.name.label("customer_name"),
+            Bill.is_edited,
         )
         .outerjoin(Customer, Customer.id == Bill.customer_id)
         .order_by(Bill.created_at.desc(), Bill.id.desc())
@@ -320,6 +392,12 @@ def list_bills(
         stmt = stmt.where(Bill.bill_type == bill_type)
     if customer_id is not None:
         stmt = stmt.where(Bill.customer_id == customer_id)
+    if created_by is not None:
+        stmt = stmt.where(Bill.created_by == created_by)
+    if is_edited is not None:
+        stmt = stmt.where(Bill.is_edited == is_edited)
+    if user.role == "admin" and shop_id is not None:
+        stmt = stmt.where(Bill.shop_id == shop_id)
 
     # Fetch one extra row to know whether there's another page.
     rows = db.execute(stmt.limit(limit + 1).offset(offset)).all()
@@ -345,7 +423,8 @@ def list_bills(
             total=r.total,
             customer_name=r.customer_name,
             item_count=counts.get(r.id, 0),
-            payment_method=_payment_method(r.cash_amount, r.upi_amount),
+            payment_method=_payment_method(r.cash_amount, r.upi_amount, r.due_amount),
+            is_edited=r.is_edited,
         )
         for r in page
     ]
@@ -356,10 +435,10 @@ def list_bills(
 def get_bill(
     bill_id: uuid.UUID,
     db: Session = Depends(get_db),
-    owner: User = Depends(require_shop_owner),
+    user: User = Depends(require_shop_or_admin),
 ) -> BillDetailOut:
-    # RLS makes another shop's bill invisible, so 'not found' and 'not yours'
-    # both correctly collapse to 404.
+    # RLS makes another shop's bill invisible (unless admin), so 'not found'
+    # and 'not yours' both correctly collapse to 404.
     bill = db.execute(select(Bill).where(Bill.id == bill_id)).scalar_one_or_none()
     if bill is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bill not found")
@@ -379,11 +458,15 @@ def get_bill(
         if c is not None:
             customer_name, customer_phone = c.name, c.phone
 
-    shop = db.execute(select(Shop).where(Shop.id == owner.shop_id)).scalar_one_or_none()
+    shop = db.execute(select(Shop).where(Shop.id == bill.shop_id)).scalar_one_or_none()
+    creator_email = _user_email(db, bill.created_by)
 
     return BillDetailOut(
         id=bill.id,
         shop_name=shop.name if shop else None,
+        business_name=(shop.business_name or shop.name) if shop else None,
+        business_address=shop.business_address if shop else None,
+        business_phone=shop.business_phone if shop else None,
         bill_type=bill.bill_type,
         subtotal=bill.subtotal,
         discount_type=bill.discount_type,
@@ -392,13 +475,113 @@ def get_bill(
         total=bill.total,
         cash_amount=bill.cash_amount,
         upi_amount=bill.upi_amount,
-        payment_method=_payment_method(bill.cash_amount, bill.upi_amount),
+        due_amount=bill.due_amount,
+        payment_method=_payment_method(bill.cash_amount, bill.upi_amount, bill.due_amount),
         customer_id=bill.customer_id,
         customer_name=customer_name,
         customer_phone=customer_phone,
+        salesperson_email=creator_email,
+        remarks=bill.remarks,
+        is_edited=bill.is_edited,
         created_at=bill.created_at,
         items=[BillItemOut.model_validate(it) for it in items],
     )
+
+
+@router.patch("/{bill_id}", response_model=BillDetailOut)
+def update_bill(
+    bill_id: uuid.UUID,
+    payload: BillUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_shop_owner_or_admin),
+) -> BillDetailOut:
+    """Update a bill's payment split (Cash/UPI/Due) and remarks. Only shop owners and admins can edit bills."""
+    bill = db.execute(select(Bill).where(Bill.id == bill_id)).scalar_one_or_none()
+    if bill is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bill not found")
+
+    # Re-calculate the payment splits to verify they match the total.
+    cash = q2(payload.cash_amount) if payload.cash_amount is not None else bill.cash_amount
+    upi = q2(payload.upi_amount) if payload.upi_amount is not None else bill.upi_amount
+    due = q2(payload.due_amount) if payload.due_amount is not None else bill.due_amount
+
+    if cash + upi + due != bill.total:
+        raise _http422(
+            f"Cash + UPI + Due (₹{cash + upi + due:.2f}) must equal the total (₹{bill.total:.2f})."
+        )
+
+    # Perform the updates
+    if payload.cash_amount is not None:
+        bill.cash_amount = cash
+    if payload.upi_amount is not None:
+        bill.upi_amount = upi
+    if payload.due_amount is not None:
+        bill.due_amount = due
+    if payload.remarks is not None:
+        bill.remarks = payload.remarks
+    bill.is_edited = True
+
+    db.flush()
+
+    # Re-retrieve items to serialize into BillDetailOut
+    items = list(
+        db.execute(
+            select(BillItem).where(BillItem.bill_id == bill.id).order_by(BillItem.id.asc())
+        ).scalars()
+    )
+
+    customer_name: str | None = None
+    customer_phone: str | None = None
+    if bill.customer_id is not None:
+        c = db.execute(
+            select(Customer).where(Customer.id == bill.customer_id)
+        ).scalar_one_or_none()
+        if c is not None:
+            customer_name, customer_phone = c.name, c.phone
+
+    shop = db.execute(select(Shop).where(Shop.id == bill.shop_id)).scalar_one_or_none()
+    creator_email = _user_email(db, bill.created_by)
+
+    return BillDetailOut(
+        id=bill.id,
+        shop_name=shop.name if shop else None,
+        business_name=(shop.business_name or shop.name) if shop else None,
+        business_address=shop.business_address if shop else None,
+        business_phone=shop.business_phone if shop else None,
+        bill_type=bill.bill_type,
+        subtotal=bill.subtotal,
+        discount_type=bill.discount_type,
+        discount_value=bill.discount_value,
+        discount_amount=bill.discount_amount,
+        total=bill.total,
+        cash_amount=bill.cash_amount,
+        upi_amount=bill.upi_amount,
+        due_amount=bill.due_amount,
+        payment_method=_payment_method(bill.cash_amount, bill.upi_amount, bill.due_amount),
+        customer_id=bill.customer_id,
+        customer_name=customer_name,
+        customer_phone=customer_phone,
+        salesperson_email=creator_email,
+        remarks=bill.remarks,
+        is_edited=bill.is_edited,
+        created_at=bill.created_at,
+        items=[BillItemOut.model_validate(it) for it in items],
+    )
+
+
+@router.delete("/{bill_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_bill(
+    bill_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_admin),
+):
+    """Delete a bill. Only admins can delete bills."""
+    bill = db.execute(select(Bill).where(Bill.id == bill_id)).scalar_one_or_none()
+    if bill is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bill not found")
+
+    db.delete(bill)
+    db.flush()
 
 
 @router.post("/{bill_id}/send-whatsapp", response_model=SendWhatsAppResult)
@@ -419,3 +602,298 @@ async def send_whatsapp(
 
     shop = db.execute(select(Shop).where(Shop.id == owner.shop_id)).scalar_one_or_none()
     return await send_bill_whatsapp(db, bill, shop, get_settings())
+
+
+def _generate_report_data(
+    db: Session,
+    shop_id: uuid.UUID,
+    date_from: dt.date,
+    date_to: dt.date,
+    created_by: uuid.UUID | None,
+) -> DetailedReportResponse:
+    start_utc, end_utc = _ist_day_bounds_utc(date_from)[0], _ist_day_bounds_utc(date_to)[1]
+
+    # 1. Aggregations on Bills
+    stmt = select(
+        func.sum(Bill.total).label("total_sales"),
+        func.count(Bill.id).label("bill_count"),
+        func.sum(Bill.cash_amount).label("cash_total"),
+        func.sum(Bill.upi_amount).label("upi_total"),
+        func.sum(Bill.due_amount).label("due_total"),
+    ).where(
+        Bill.shop_id == shop_id,
+        Bill.created_at >= start_utc,
+        Bill.created_at < end_utc,
+    )
+    if created_by is not None:
+        stmt = stmt.where(Bill.created_by == created_by)
+
+    res = db.execute(stmt).one()
+    total_sales = res.total_sales or Decimal("0.00")
+    bill_count = res.bill_count or 0
+    cash_total = res.cash_total or Decimal("0.00")
+    upi_total = res.upi_total or Decimal("0.00")
+    due_total = res.due_total or Decimal("0.00")
+
+    average_bill_value = Decimal("0.00")
+    if bill_count > 0:
+        average_bill_value = q2(total_sales / bill_count)
+
+    # 2. Group by category
+    cat_stmt = (
+        select(
+            Product.category.label("category"),
+            func.sum(BillItem.quantity).label("quantity"),
+            func.sum(BillItem.line_total).label("total_sales"),
+        )
+        .select_from(BillItem)
+        .join(Bill, Bill.id == BillItem.bill_id)
+        .outerjoin(Product, Product.id == BillItem.product_id)
+        .where(
+            Bill.shop_id == shop_id,
+            Bill.created_at >= start_utc,
+            Bill.created_at < end_utc,
+        )
+    )
+    if created_by is not None:
+        cat_stmt = cat_stmt.where(Bill.created_by == created_by)
+    cat_stmt = cat_stmt.group_by(Product.category).order_by(func.sum(BillItem.line_total).desc())
+    cat_rows = db.execute(cat_stmt).all()
+
+    categories = [
+        CategorySales(
+            category=row.category or "Uncategorized",
+            quantity=int(row.quantity or 0),
+            total_sales=q2(row.total_sales or Decimal("0.00")),
+        )
+        for row in cat_rows
+    ]
+
+    # 3. Top products
+    prod_stmt = (
+        select(
+            BillItem.product_name.label("product_name"),
+            func.sum(BillItem.quantity).label("quantity"),
+            func.sum(BillItem.line_total).label("total_sales"),
+        )
+        .select_from(BillItem)
+        .join(Bill, Bill.id == BillItem.bill_id)
+        .where(
+            Bill.shop_id == shop_id,
+            Bill.created_at >= start_utc,
+            Bill.created_at < end_utc,
+        )
+    )
+    if created_by is not None:
+        prod_stmt = prod_stmt.where(Bill.created_by == created_by)
+    prod_stmt = prod_stmt.group_by(BillItem.product_name).order_by(func.sum(BillItem.line_total).desc()).limit(15)
+    prod_rows = db.execute(prod_stmt).all()
+
+    top_products = [
+        ProductSales(
+            product_name=str(row.product_name),
+            quantity=int(row.quantity or 0),
+            total_sales=q2(row.total_sales or Decimal("0.00")),
+        )
+        for row in prod_rows
+    ]
+
+    return DetailedReportResponse(
+        start_date=date_from,
+        end_date=date_to,
+        total_sales=q2(total_sales),
+        bill_count=bill_count,
+        cash_total=q2(cash_total),
+        upi_total=q2(upi_total),
+        due_total=q2(due_total),
+        average_bill_value=average_bill_value,
+        categories=categories,
+        top_products=top_products,
+    )
+
+
+def _format_report_whatsapp(report: DetailedReportResponse, shop_name: str) -> str:
+    lines = [
+        f"🟢 *{shop_name} Sales Report*",
+        f"📅 *Period*: {report.start_date} to {report.end_date}",
+        "--------------------------------",
+        f"• *Total Sales*: ₹{report.total_sales:.2f}",
+        f"• *Total Bills*: {report.bill_count}",
+        f"• *Average Bill*: ₹{report.average_bill_value:.2f}",
+        "--------------------------------",
+        f"💵 *Cash Collected*: ₹{report.cash_total:.2f}",
+        f"📱 *UPI Collected*: ₹{report.upi_total:.2f}",
+        f"⚠️ *Due Outstanding*: ₹{report.due_total:.2f}",
+        "--------------------------------",
+        "*Top Categories*:"
+    ]
+    for cat in report.categories[:5]:
+        lines.append(f" - {cat.category}: {cat.quantity} items (₹{cat.total_sales:.2f})")
+
+    lines.append("--------------------------------")
+    lines.append("*Top Products*:")
+    for prod in report.top_products[:5]:
+        lines.append(f" - {prod.product_name}: {prod.quantity} items (₹{prod.total_sales:.2f})")
+
+    return "\n".join(lines)
+
+
+@router.get("/summary/report", response_model=DetailedReportResponse)
+def get_detailed_report(
+    date_from: dt.date | None = Query(default=None),
+    date_to: dt.date | None = Query(default=None),
+    created_by: uuid.UUID | None = Query(default=None),
+    shop_id: uuid.UUID | None = Query(default=None),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_shop_or_admin),
+) -> DetailedReportResponse:
+    """Generate a detailed report of sales statistics and breakdown by categories/products."""
+    today = _today_ist()
+    d_from = date_from or today
+    d_to = date_to or today
+
+    target_shop_id = user.shop_id
+    if user.role == "admin":
+        if shop_id is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="shop_id is required for admin role")
+        target_shop_id = shop_id
+
+    if target_shop_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="shop_id is required")
+
+    return _generate_report_data(db, target_shop_id, d_from, d_to, created_by)
+
+
+@router.get("/summary/report/download")
+def download_detailed_report(
+    date_from: dt.date | None = Query(default=None),
+    date_to: dt.date | None = Query(default=None),
+    created_by: uuid.UUID | None = Query(default=None),
+    shop_id: uuid.UUID | None = Query(default=None),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_shop_or_admin),
+):
+    """Download the detailed report as a CSV file."""
+    import csv
+    import io
+    from fastapi.responses import StreamingResponse
+
+    today = _today_ist()
+    d_from = date_from or today
+    d_to = date_to or today
+
+    target_shop_id = user.shop_id
+    if user.role == "admin":
+        if shop_id is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="shop_id is required for admin role")
+        target_shop_id = shop_id
+
+    if target_shop_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="shop_id is required")
+
+    report = _generate_report_data(db, target_shop_id, d_from, d_to, created_by)
+    shop = db.execute(select(Shop).where(Shop.id == target_shop_id)).scalar_one_or_none()
+    shop_name = shop.name if shop else "Nursery"
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    writer.writerow(["Detailed Sales Report", shop_name])
+    writer.writerow(["Period", f"{d_from} to {d_to}"])
+    writer.writerow([])
+    writer.writerow(["Summary Metrics"])
+    writer.writerow(["Total Sales", f"INR {report.total_sales:.2f}"])
+    writer.writerow(["Total Bills", report.bill_count])
+    writer.writerow(["Average Bill Value", f"INR {report.average_bill_value:.2f}"])
+    writer.writerow(["Cash Collected", f"INR {report.cash_total:.2f}"])
+    writer.writerow(["UPI Collected", f"INR {report.upi_total:.2f}"])
+    writer.writerow(["Due Amount", f"INR {report.due_total:.2f}"])
+    writer.writerow([])
+
+    writer.writerow(["Sales by Category"])
+    writer.writerow(["Category", "Quantity Sold", "Total Revenue"])
+    for cat in report.categories:
+        writer.writerow([cat.category, cat.quantity, f"INR {cat.total_sales:.2f}"])
+    writer.writerow([])
+
+    writer.writerow(["Top Products"])
+    writer.writerow(["Product Name", "Quantity Sold", "Total Revenue"])
+    for prod in report.top_products:
+        writer.writerow([prod.product_name, prod.quantity, f"INR {prod.total_sales:.2f}"])
+
+    output.seek(0)
+
+    headers = {
+        "Content-Disposition": f"attachment; filename=sales_report_{d_from}_to_{d_to}.csv"
+    }
+    return StreamingResponse(
+        io.BytesIO(output.getvalue().encode("utf-8")),
+        media_type="text/csv",
+        headers=headers
+    )
+
+
+@router.post("/summary/report/send-whatsapp", response_model=SendWhatsAppResult)
+async def send_report_whatsapp(
+    payload: SendReportWhatsAppRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_shop_or_admin),
+) -> SendWhatsAppResult:
+    """Send or generate a wa.me share link for the sales report summary on WhatsApp."""
+    today = _today_ist()
+    d_from = payload.date_from or today
+    d_to = payload.date_to or today
+
+    target_shop_id = user.shop_id
+    if user.role == "admin":
+        if payload.shop_id is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="shop_id is required in payload for admin role")
+        target_shop_id = payload.shop_id
+
+    if target_shop_id is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="shop_id is required")
+
+    report = _generate_report_data(db, target_shop_id, d_from, d_to, payload.created_by)
+    shop = db.execute(select(Shop).where(Shop.id == target_shop_id)).scalar_one_or_none()
+    shop_name = shop.name if shop else "Nursery"
+
+    message = _format_report_whatsapp(report, shop_name)
+
+    settings = get_settings()
+    norm = normalize_indian_phone(payload.phone, settings.WHATSAPP_COUNTRY_CODE)
+    if norm is None:
+        return SendWhatsAppResult(
+            status="not_eligible",
+            wa_me_url=None,
+            detail="The phone number doesn't look like a valid mobile number.",
+        )
+
+    wa_me_url = WaMeLinkBuilder.build(norm.wa_me, message)
+
+    if not settings.WHATSAPP_ENABLED:
+        return SendWhatsAppResult(
+            status="disabled",
+            wa_me_url=wa_me_url,
+            detail="WhatsApp sending is turned off. Use the link to share manually.",
+        )
+
+    if settings.WHATSAPP_DEFAULT_BACKEND == "openwa" and shop is not None and shop.openwa_session_id:
+        client = OpenWAClient(
+            settings.OPENWA_BASE_URL,
+            settings.OPENWA_API_KEY,
+            timeout=settings.OPENWA_TIMEOUT_SECONDS,
+        )
+        if await client.is_session_connected(shop.openwa_session_id):
+            if await client.send_text(shop.openwa_session_id, norm.chat_id, message):
+                return SendWhatsAppResult(
+                    status="sent_via_openwa",
+                    wa_me_url=None,
+                    detail="Report sent on WhatsApp.",
+                )
+
+    return SendWhatsAppResult(
+        status="fallback_wa_me",
+        wa_me_url=wa_me_url,
+        detail="Tap to send this report on WhatsApp.",
+    )
+

@@ -3,8 +3,9 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import get_current_user, get_db
 from app.auth.security import create_access_token, verify_password
 from app.database import privileged_session
 from app.models.shop import Shop
@@ -51,5 +52,21 @@ def login(payload: LoginRequest) -> Token:
 
 
 @router.get("/me", response_model=CurrentUser)
-def me(user: User = Depends(get_current_user)) -> User:
-    return user
+def me(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> CurrentUser:
+    shop_name = None
+    if user.shop_id is not None:
+        shop = db.execute(select(Shop).where(Shop.id == user.shop_id)).scalar_one_or_none()
+        if shop:
+            shop_name = shop.name
+
+    return CurrentUser(
+        id=user.id,
+        email=user.email,
+        role=user.role,
+        shop_id=user.shop_id,
+        is_active=user.is_active,
+        shop_name=shop_name,
+    )

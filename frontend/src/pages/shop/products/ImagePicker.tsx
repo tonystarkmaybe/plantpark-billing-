@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ImagePlus } from "lucide-react";
 import { validateImageFile } from "@/lib/image";
+import { getMediaUrl } from "@/api/client";
 
 interface ImagePickerProps {
   /** A freshly picked file not yet uploaded (takes display priority). */
@@ -31,6 +32,7 @@ export function ImagePicker({ file, existingUrl, onSelect, onRemove, onError }: 
   }, [file]);
 
   const shownUrl = filePreview ?? existingUrl;
+  const resolvedUrl = getMediaUrl(shownUrl);
 
   const openPicker = () => inputRef.current?.click();
 
@@ -60,9 +62,9 @@ export function ImagePicker({ file, existingUrl, onSelect, onRemove, onError }: 
         tabIndex={-1}
       />
 
-      {shownUrl ? (
+      {resolvedUrl ? (
         <div className="flex items-center gap-4">
-          <img src={shownUrl} alt="Product" className="h-24 w-24 rounded-control border border-border object-cover" />
+          <img src={resolvedUrl} alt="Product" className="h-24 w-24 rounded-control border border-border object-cover" />
           <div className="flex flex-1 flex-col gap-2">
             <button
               type="button"

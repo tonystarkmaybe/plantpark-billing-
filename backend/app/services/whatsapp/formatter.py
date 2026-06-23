@@ -36,7 +36,9 @@ class BillMessage:
     total: Decimal
     cash_amount: Decimal
     upi_amount: Decimal
+    due_amount: Decimal = Decimal("0")
     customer_name: str | None = None
+    remarks: str | None = None
     extra: dict = field(default_factory=dict)
 
 
@@ -55,15 +57,23 @@ def _inr(amount: Decimal) -> str:
     return f"{'-' if negative else ''}₹{intpart}.{dec}"
 
 
-def _payment_line(cash: Decimal, upi: Decimal) -> str:
-    has_cash = cash > 0
-    has_upi = upi > 0
-    if has_cash and has_upi:
-        return f"Paid: Cash {_inr(cash)} + UPI {_inr(upi)} (Split)"
-    if has_upi:
-        return f"Paid: UPI {_inr(upi)}"
-    # Default / cash-only (also covers a ₹0 bill).
-    return f"Paid: Cash {_inr(cash)}"
+def _payment_line(cash: Decimal, upi: Decimal, due: Decimal) -> str:
+    parts = []
+    if cash > 0:
+        parts.append(f"Cash {_inr(cash)}")
+    if upi > 0:
+        parts.append(f"UPI {_inr(upi)}")
+    if due > 0:
+        parts.append(f"Due {_inr(due)}")
+
+    if not parts:
+        return f"Paid: Cash {_inr(cash)}"
+
+    if due > 0 and cash == 0 and upi == 0:
+        return f"Payment: Due {_inr(due)}"
+
+    suffix = " (Split)" if len(parts) > 1 else ""
+    return "Paid: " + " + ".join(parts) + suffix
 
 
 def format_bill_message(bill: BillMessage) -> str:
@@ -98,7 +108,10 @@ def format_bill_message(bill: BillMessage) -> str:
     lines.append(f"Total: {_inr(bill.total)}")
     lines.append("")
 
-    lines.append(_payment_line(bill.cash_amount, bill.upi_amount))
+    lines.append(_payment_line(bill.cash_amount, bill.upi_amount, bill.due_amount))
+    if bill.remarks:
+        lines.append("")
+        lines.append(f"Remarks: {bill.remarks}")
     lines.append("")
     lines.append(f"Thank you for shopping with {shop}! 🌿")
 

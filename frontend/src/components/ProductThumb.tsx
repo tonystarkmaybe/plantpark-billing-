@@ -1,3 +1,5 @@
+import { getMediaUrl } from "@/api/client";
+
 interface ProductThumbProps {
   name: string;
   photoUrl: string | null;
@@ -11,10 +13,11 @@ interface ProductThumbProps {
  * the product's initial when there's no photo.
  */
 export function ProductThumb({ name, photoUrl, className = "h-24 w-full" }: ProductThumbProps) {
-  if (photoUrl) {
+  const resolvedUrl = getMediaUrl(photoUrl);
+  if (resolvedUrl) {
     return (
       <img
-        src={photoUrl}
+        src={resolvedUrl}
         alt=""
         className={`${className} rounded-control object-cover`}
         loading="lazy"

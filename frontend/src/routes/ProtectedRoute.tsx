@@ -4,8 +4,8 @@ import type { Role } from "@/api/types";
 import { Spinner } from "@/components/Spinner";
 
 interface ProtectedRouteProps {
-  /** If set, only this role may enter; other roles are redirected to their home. */
-  role?: Role;
+  /** If set, only these roles may enter; other roles are redirected to their home. */
+  role?: Role | Role[];
 }
 
 /** Full-screen loader shown while the initial /auth/me hydration is in flight. */
@@ -18,7 +18,9 @@ function FullScreenLoader() {
 }
 
 export function roleHome(role: Role | undefined): string {
-  return role === "admin" ? "/admin" : "/app/bill";
+  if (role === "admin") return "/admin";
+  if (role === "shop_owner") return "/app/products";
+  return "/app/bill";
 }
 
 export function ProtectedRoute({ role }: ProtectedRouteProps) {
@@ -35,8 +37,11 @@ export function ProtectedRoute({ role }: ProtectedRouteProps) {
   }
 
   // Wrong role → send to their own home, never the other role's area.
-  if (role && user.role !== role) {
-    return <Navigate to={roleHome(user.role)} replace />;
+  if (role) {
+    const allowed = Array.isArray(role) ? role : [role];
+    if (!allowed.includes(user.role)) {
+      return <Navigate to={roleHome(user.role)} replace />;
+    }
   }
 
   return <Outlet />;

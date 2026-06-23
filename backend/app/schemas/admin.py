@@ -33,6 +33,12 @@ class ShopSummary(BaseModel):
     owner_phone: str | None
     is_active: bool
     created_at: dt.datetime
+    whatsapp_auto_send: bool
+    business_name: str | None = None
+    business_address: str | None = None
+    business_phone: str | None = None
+    business_email: str | None = None
+    business_upi: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -52,10 +58,22 @@ class ShopListRow(BaseModel):
     owner_email: EmailStr | None
     is_active: bool
     created_at: dt.datetime
+    whatsapp_auto_send: bool
+    business_name: str | None = None
+    business_address: str | None = None
+    business_phone: str | None = None
+    business_email: str | None = None
+    business_upi: str | None = None
 
 
-class ShopActivateRequest(BaseModel):
-    is_active: bool
+class ShopUpdateRequest(BaseModel):
+    is_active: bool | None = None
+    whatsapp_auto_send: bool | None = None
+    business_name: str | None = None
+    business_address: str | None = None
+    business_phone: str | None = None
+    business_email: str | None = None
+    business_upi: str | None = None
 
 
 class ResetPasswordRequest(BaseModel):

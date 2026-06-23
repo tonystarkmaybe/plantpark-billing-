@@ -65,3 +65,21 @@ class ProductDeleteResponse(BaseModel):
     id: uuid.UUID
     hard_deleted: bool
     detail: str
+
+
+class BulkDeleteRequest(BaseModel):
+    product_ids: list[uuid.UUID]
+
+
+class BulkDeleteResponse(BaseModel):
+    detail: str
+    hard_deleted: int
+    soft_deleted: int
+
+
+class BulkPhotosResponse(BaseModel):
+    detail: str
+    matched: int
+    errors: list[str]
+
+

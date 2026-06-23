@@ -13,6 +13,8 @@ import { StyleGuide } from "@/pages/StyleGuide";
 import { NotFound } from "@/pages/NotFound";
 import { ShopsPage } from "@/pages/admin/ShopsPage";
 import { CustomersPage } from "@/pages/admin/CustomersPage";
+import { CustomersPage as ShopCustomersPage } from "@/pages/shop/CustomersPage";
+import { SalesPage as AdminSalesPage } from "@/pages/admin/SalesPage";
 
 /** Sends an already-authenticated user away from /login to their role home. */
 function RootRedirect() {
@@ -20,6 +22,12 @@ function RootRedirect() {
   const token = useAuth((s) => s.token);
   if (token && user) return <Navigate to={roleHome(user.role)} replace />;
   return <Navigate to="/login" replace />;
+}
+
+function AppIndexRedirect() {
+  const user = useAuth((s) => s.user);
+  const target = user?.role === "shop_owner" ? "/app/products" : "/app/bill";
+  return <Navigate to={target} replace />;
 }
 
 export default function App() {
@@ -39,13 +47,14 @@ export default function App() {
         {/* Dev-only design system reference (not linked in nav). */}
         {import.meta.env.DEV && <Route path="/_styleguide" element={<StyleGuide />} />}
 
-        {/* Shop owner area */}
-        <Route element={<ProtectedRoute role="shop_owner" />}>
+        {/* Shop owner & salesperson area */}
+        <Route element={<ProtectedRoute role={["shop_owner", "salesperson"]} />}>
           <Route path="/app" element={<ShopLayout />}>
-            <Route index element={<Navigate to="/app/bill" replace />} />
+            <Route index element={<AppIndexRedirect />} />
             <Route path="bill" element={<BillPage />} />
             <Route path="products" element={<ProductsPage />} />
             <Route path="sales" element={<SalesPage />} />
+            <Route path="customers" element={<ShopCustomersPage />} />
             <Route path="more" element={<MorePage />} />
           </Route>
         </Route>
@@ -56,6 +65,7 @@ export default function App() {
             <Route index element={<Navigate to="/admin/shops" replace />} />
             <Route path="shops" element={<ShopsPage />} />
             <Route path="customers" element={<CustomersPage />} />
+            <Route path="sales" element={<AdminSalesPage />} />
           </Route>
         </Route>
 

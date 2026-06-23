@@ -2,12 +2,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   listAdminCustomers,
   listShops,
+  downloadAdminCustomersCSV,
   type AdminCustomerRow,
   type ShopRow,
 } from "@/api/admin";
 import { friendlyError } from "@/api/client";
 import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/Button";
+import { Download } from "lucide-react";
 
 const PAGE_SIZE = 50;
 
@@ -26,6 +28,21 @@ export function CustomersPage() {
   const [search, setSearch] = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");
   const [shopId, setShopId] = useState<string>("");
+  const [exporting, setExporting] = useState(false);
+
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      await downloadAdminCustomersCSV({
+        q: debouncedQ || undefined,
+        shop_id: shopId || undefined,
+      });
+    } catch (e) {
+      alert("Failed to export customer list.");
+    } finally {
+      setExporting(false);
+    }
+  };
 
   useEffect(() => {
     listShops().then(setShops).catch(() => setShops([]));
@@ -78,13 +95,27 @@ export function CustomersPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-extrabold text-ink">Customers</h1>
-      <p className="text-sm text-ink-soft">{loading ? "Loading…" : countLabel}</p>
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-extrabold text-ink">Customers</h1>
+          <p className="text-sm text-ink-soft">{loading ? "Loading…" : countLabel}</p>
+        </div>
+        <Button
+          variant="secondary"
+          size="tap"
+          className="border-2 bg-white flex items-center gap-1.5 font-bold"
+          onClick={handleExport}
+          disabled={loading || exporting || rows.length === 0}
+        >
+          <Download className="h-4.5 w-4.5" />
+          {exporting ? "Exporting..." : "Export Excel"}
+        </Button>
+      </div>
 
       {/* Privacy note */}
       <div className="mt-3 rounded-control border border-warning/40 bg-warning-soft px-4 py-2.5 text-sm font-semibold text-warning">
         Sensitive data: end-customers' personal contact details across all shops. Admin-only — handle per privacy
-        (DPDP) obligations. Not exportable.
+        (DPDP) obligations.
       </div>
 
       {/* Filters */}

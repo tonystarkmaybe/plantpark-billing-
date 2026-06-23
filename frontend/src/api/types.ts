@@ -1,7 +1,7 @@
 // Typed API contracts. User is complete now; Product/Bill are stubs to be
 // expanded in later prompts.
 
-export type Role = "admin" | "shop_owner";
+export type Role = "admin" | "shop_owner" | "salesperson";
 
 export interface User {
   id: string;

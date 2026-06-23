@@ -87,3 +87,69 @@ def test_wholesale_upi_only_and_indian_grouping_no_customer():
     assert "Discount: -₹500.00" in msg
     assert "Total: ₹22,000.00" in msg  # Indian digit grouping
     assert "Paid: UPI ₹22,000.00" in msg
+
+
+def test_due_payment_formatting():
+    msg = format_bill_message(
+        BillMessage(
+            shop_name="Green Leaf Nursery",
+            created_at=WHEN,
+            bill_type="retail",
+            items=[BillLine("Money Plant", 2, _money("120.00"), _money("240.00"))],
+            subtotal=_money("240.00"),
+            discount_type="flat",
+            discount_value=_money("0.00"),
+            discount_amount=_money("0.00"),
+            total=_money("240.00"),
+            cash_amount=_money("0.00"),
+            upi_amount=_money("0.00"),
+            due_amount=_money("240.00"),
+            customer_name="Sita",
+        )
+    )
+    assert "Total: ₹240.00" in msg
+    assert "Payment: Due ₹240.00" in msg
+
+
+def test_split_due_payment_formatting():
+    msg = format_bill_message(
+        BillMessage(
+            shop_name="Green Leaf Nursery",
+            created_at=WHEN,
+            bill_type="retail",
+            items=[BillLine("Money Plant", 2, _money("120.00"), _money("240.00"))],
+            subtotal=_money("240.00"),
+            discount_type="flat",
+            discount_value=_money("0.00"),
+            discount_amount=_money("0.00"),
+            total=_money("240.00"),
+            cash_amount=_money("100.00"),
+            upi_amount=_money("50.00"),
+            due_amount=_money("90.00"),
+            customer_name="Sita",
+        )
+    )
+    assert "Total: ₹240.00" in msg
+    assert "Paid: Cash ₹100.00 + UPI ₹50.00 + Due ₹90.00 (Split)" in msg
+
+
+def test_remarks_formatting():
+    msg = format_bill_message(
+        BillMessage(
+            shop_name="Green Leaf Nursery",
+            created_at=WHEN,
+            bill_type="retail",
+            items=[BillLine("Money Plant", 2, _money("120.00"), _money("240.00"))],
+            subtotal=_money("240.00"),
+            discount_type="flat",
+            discount_value=_money("0.00"),
+            discount_amount=_money("0.00"),
+            total=_money("240.00"),
+            cash_amount=_money("240.00"),
+            upi_amount=_money("0.00"),
+            customer_name="Sita",
+            remarks="Deliver on Monday",
+        )
+    )
+    assert "Remarks: Deliver on Monday" in msg
+

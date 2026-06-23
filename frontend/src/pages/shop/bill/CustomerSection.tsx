@@ -31,15 +31,21 @@ export function CustomerSection({ value, onChange }: CustomerSectionProps) {
             type="tel"
             inputMode="tel"
             value={value.phone}
-            onChange={(e) => onChange({ ...value, phone: e.target.value })}
-            placeholder="Phone number for the receipt"
-            className="field"
+            onChange={(e) => onChange({ ...value, phone: e.target.value.replace(/\D/g, "").substring(0, 10) })}
+            placeholder="10-digit phone number"
+            className={`field ${value.phone && value.phone.length < 10 ? "border-danger focus:border-danger focus:ring-danger/20" : ""}`}
             aria-label="Customer phone number for the receipt"
             autoComplete="off"
           />
-          <p className="mt-1.5 text-sm text-ink-soft">
-            We'll only use this number to send this customer their bill.
-          </p>
+          {value.phone && value.phone.length < 10 ? (
+            <p className="mt-1.5 text-sm font-semibold text-danger">
+              Phone number must be exactly 10 digits.
+            </p>
+          ) : (
+            <p className="mt-1.5 text-sm text-ink-soft">
+              We'll only use this number to send this customer their bill.
+            </p>
+          )}
         </div>
       </div>
     </div>

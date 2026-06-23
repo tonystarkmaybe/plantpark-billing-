@@ -22,8 +22,6 @@ interface Errors {
 
 export function CreateShopModal({ open, onClose, onCreated }: CreateShopModalProps) {
   const [name, setName] = useState("");
-  const [ownerName, setOwnerName] = useState("");
-  const [ownerPhone, setOwnerPhone] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
@@ -36,8 +34,6 @@ export function CreateShopModal({ open, onClose, onCreated }: CreateShopModalPro
   useEffect(() => {
     if (!open) return;
     setName("");
-    setOwnerName("");
-    setOwnerPhone("");
     setEmail("");
     setPassword(generatePassword());
     setErrors({});
@@ -63,8 +59,8 @@ export function CreateShopModal({ open, onClose, onCreated }: CreateShopModalPro
     setServerError(null);
     const payload: ShopCreatePayload = {
       name: name.trim(),
-      owner_name: ownerName.trim() || null,
-      owner_phone: ownerPhone.trim() || null,
+      owner_name: null,
+      owner_phone: null,
       owner_email: email.trim(),
       owner_password: password,
     };
@@ -127,14 +123,6 @@ export function CreateShopModal({ open, onClose, onCreated }: CreateShopModalPro
             <input className={inputCls(errors.name)} value={name} onChange={(e) => setName(e.target.value)} placeholder="Green Leaf Nursery" />
           </Field>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field label="Owner name (optional)">
-              <input className={inputCls()} value={ownerName} onChange={(e) => setOwnerName(e.target.value)} placeholder="Ramesh" />
-            </Field>
-            <Field label="Owner phone (optional)">
-              <input className={inputCls()} value={ownerPhone} onChange={(e) => setOwnerPhone(e.target.value)} placeholder="98765 43210" inputMode="tel" />
-            </Field>
-          </div>
 
           <Field label="Owner login email" error={errors.owner_email}>
             <input className={inputCls(errors.owner_email)} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="owner@example.com" inputMode="email" autoComplete="off" />

@@ -26,6 +26,8 @@ export interface BillCreatePayload {
   discount_value: string;
   cash_amount: string;
   upi_amount: string;
+  due_amount: string;
+  remarks?: string | null;
   // Customer is entered fresh per bill and optional.
   new_customer?: NewCustomerPayload | null;
 }
@@ -48,9 +50,12 @@ export interface BillOut {
   total: string;
   cash_amount: string;
   upi_amount: string;
+  due_amount: string;
   customer_id: string | null;
   customer_name: string | null;
   created_by: string | null;
+  salesperson_email: string | null;
+  remarks: string | null;
   created_at: string;
   items: BillItemOut[];
   idempotent_replay: boolean;

@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { Navigate } from "react-router-dom";
+import { useAuth } from "@/store/auth";
 import type { Product } from "@/api/types";
 import {
   createBill,
@@ -16,8 +18,15 @@ import { ProductGrid } from "./bill/ProductGrid";
 import { CartBar } from "./bill/CartBar";
 import { CartSheet } from "./bill/CartSheet";
 import { SuccessView } from "./bill/SuccessView";
+import { QuickAddSheet } from "./bill/QuickAddSheet";
+import { ScannerSheet } from "./bill/ScannerSheet";
 
 export function BillPage() {
+  const user = useAuth((s) => s.user);
+  if (user?.role === "shop_owner") {
+    return <Navigate to="/app/products" replace />;
+  }
+
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -28,6 +37,10 @@ export function BillPage() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedBill, setSavedBill] = useState<BillOut | null>(null);
 
+  // Quick Add & Scanner sheet states
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const [scannerOpen, setScannerOpen] = useState(false);
+
   const {
     lines,
     addUnit,
@@ -35,7 +48,9 @@ export function BillPage() {
     discountValue,
     cash,
     upi,
+    due,
     customer,
+    remarks,
     ensureIdempotencyKey,
     resetForNewBill,
   } = useBilling();
@@ -91,6 +106,8 @@ export function BillPage() {
       discount_value: discountValue.trim() ? fromPaise(toPaise(discountValue)) : "0",
       cash_amount: fromPaise(toPaise(cash)),
       upi_amount: fromPaise(toPaise(upi)),
+      due_amount: fromPaise(toPaise(due)),
+      remarks: remarks.trim() || null,
       // Customer is optional: send it only when a name was entered.
       new_customer: name ? { name, phone: customer.phone.trim() || null } : null,
     };
@@ -144,7 +161,13 @@ export function BillPage() {
         <ProductGrid products={products} cartQty={cartQty} onPick={addUnit} />
       )}
 
-      <CartBar itemCount={itemCount} totalPaise={totals.totalPaise} onOpen={() => setCartOpen(true)} />
+      <CartBar
+        itemCount={itemCount}
+        totalPaise={totals.totalPaise}
+        onOpenCheckout={() => setCartOpen(true)}
+        onOpenQuickAdd={() => setQuickAddOpen(true)}
+        onOpenScanner={() => setScannerOpen(true)}
+      />
 
       <CartSheet
         open={cartOpen}
@@ -153,6 +176,22 @@ export function BillPage() {
         onCheckout={handleCheckout}
         saving={saving}
         errorMsg={saveError}
+      />
+
+      <QuickAddSheet
+        open={quickAddOpen}
+        onClose={() => setQuickAddOpen(false)}
+        onAdded={(p, qty) => {
+          setProducts((prev) => [p, ...prev]);
+          addUnit(p, qty);
+        }}
+      />
+
+      <ScannerSheet
+        open={scannerOpen}
+        onClose={() => setScannerOpen(false)}
+        products={products}
+        onScanned={(p) => addUnit(p)}
       />
     </div>
   );
