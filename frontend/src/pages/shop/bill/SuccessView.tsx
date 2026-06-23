@@ -1,8 +1,10 @@
+import { useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
-import { Check } from "lucide-react";
+import { Check, Printer } from "lucide-react";
 import type { BillOut } from "@/api/billing";
 import { Button } from "@/components/Button";
 import { formatINR, toPaise } from "@/lib/money";
+import { useBluetoothPrinter } from "@/store/bluetooth";
 
 interface SuccessViewProps {
   bill: BillOut;
@@ -16,6 +18,32 @@ interface SuccessViewProps {
  */
 export function SuccessView({ bill, onNewBill }: SuccessViewProps) {
   const reduce = useReducedMotion();
+  const [printing, setPrinting] = useState(false);
+  const { status } = useBluetoothPrinter();
+
+  const handlePrint = async () => {
+    setPrinting(true);
+    try {
+      const printerStore = useBluetoothPrinter.getState();
+      if (printerStore.status !== "connected") {
+        const pref = printerStore.preferredConnectionType;
+        if (pref === "serial") {
+          await printerStore.connectSerial();
+        } else if (pref === "usb") {
+          await printerStore.connectUsb();
+        } else {
+          await printerStore.connect();
+        }
+      }
+      if (useBluetoothPrinter.getState().status === "connected") {
+        await useBluetoothPrinter.getState().printReceipt(bill);
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to print receipt.");
+    } finally {
+      setPrinting(false);
+    }
+  };
   const cash = toPaise(bill.cash_amount);
   const upi = toPaise(bill.upi_amount);
   const due = bill.due_amount ? toPaise(bill.due_amount) : 0;
@@ -73,12 +101,15 @@ export function SuccessView({ bill, onNewBill }: SuccessViewProps) {
           New Bill
         </Button>
 
-        {/* Placeholders — Print & WhatsApp arrive in a later prompt. */}
-        <Button variant="secondary" size="action" className="w-full" disabled>
-          Print receipt
-          <span className="ml-2 rounded-full bg-surface-muted px-2 py-0.5 text-sm font-semibold text-ink-soft">
-            Soon
-          </span>
+        <Button
+          variant="secondary"
+          size="action"
+          className="w-full font-bold flex items-center justify-center gap-2 border-2 bg-white"
+          loading={printing}
+          onClick={handlePrint}
+        >
+          <Printer className="h-5 w-5" />
+          {status === "connected" ? "Print Receipt" : "Connect & Print"}
         </Button>
         <Button variant="secondary" size="action" className="w-full" disabled>
           Share on WhatsApp

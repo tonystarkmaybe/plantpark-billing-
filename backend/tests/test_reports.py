@@ -14,6 +14,9 @@ def test_format_report_whatsapp():
         upi_total=decimal.Decimal("5240.00"),
         due_total=decimal.Decimal("0.00"),
         average_bill_value=decimal.Decimal("1270.00"),
+        total_expenses=decimal.Decimal("500.00"),
+        net_sales=decimal.Decimal("14740.00"),
+        expenses=[],
         categories=[
             CategorySales(category="Plants", quantity=15, total_sales=decimal.Decimal("12000.00")),
             CategorySales(category="Pots", quantity=5, total_sales=decimal.Decimal("3240.00")),
@@ -30,5 +33,7 @@ def test_format_report_whatsapp():
     assert "*Total Sales*: ₹15240.00" in formatted
     assert "*Cash Collected*: ₹10000.00" in formatted
     assert "*UPI Collected*: ₹5240.00" in formatted
+    assert "*Total Expenses*: ₹500.00" in formatted
+    assert "*Net Income*: ₹14740.00" in formatted
     assert "Plants: 15 items" in formatted
     assert "Areca Palm: 10 items" in formatted

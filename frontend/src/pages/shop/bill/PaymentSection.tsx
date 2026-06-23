@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { Check } from "lucide-react";
 import type { PayMethod } from "@/store/billing";
 import { formatINR, fromPaise, toPaise } from "@/lib/money";
+import { useAuth } from "@/store/auth";
 
 interface PaymentSectionProps {
   totalPaise: number;
@@ -78,6 +79,21 @@ export function PaymentSection({
   const sumPaise = toPaise(cash) + toPaise(upi) + toPaise(due);
   const balanced = sumPaise === totalPaise;
 
+  const user = useAuth((s) => s.user);
+  const upiId = user?.business_upi;
+  const businessName = user?.business_name || user?.shop_name || "Nursery";
+
+  const upiAmountPaise = method === "upi" ? totalPaise : (method === "split" ? toPaise(upi) : 0);
+  const showQrCode = upiAmountPaise > 0;
+
+  const amountInRupees = (upiAmountPaise / 100).toFixed(2);
+  const upiUrl = upiId
+    ? `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(businessName)}&am=${amountInRupees}&cu=INR`
+    : "";
+  const qrImageUrl = upiUrl
+    ? `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(upiUrl)}`
+    : "";
+
   return (
     <div>
       <span className="mb-2 block text-base font-semibold text-ink">Payment</span>
@@ -116,6 +132,38 @@ export function PaymentSection({
               {formatINR(sumPaise)} / {formatINR(totalPaise)}
             </span>
           </div>
+        </div>
+      )}
+
+      {showQrCode && (
+        <div className="mt-4 rounded-card border border-border bg-surface p-4 shadow-card flex flex-col items-center text-center">
+          {upiId ? (
+            <>
+              <div className="mb-2">
+                <span className="text-xs font-bold uppercase tracking-wider text-upi">UPI Payment QR</span>
+              </div>
+              <div className="relative mb-3 flex h-48 w-48 items-center justify-center rounded-2xl border-2 border-border bg-white p-2 shadow-inner overflow-hidden">
+                <img
+                  src={qrImageUrl}
+                  alt={`UPI QR Code for ${formatINR(upiAmountPaise)}`}
+                  className="h-full w-full object-contain"
+                />
+                <div className="absolute left-0 right-0 h-0.5 bg-upi opacity-40 shadow-[0_0_8px_#2F6FB0] animate-scan" />
+              </div>
+              <div className="space-y-0.5">
+                <p className="text-xl font-extrabold text-ink">{formatINR(upiAmountPaise)}</p>
+                <p className="text-sm font-semibold text-ink-soft">{businessName}</p>
+                <p className="text-xs font-medium text-ink-faint tnum">{upiId}</p>
+              </div>
+            </>
+          ) : (
+            <div className="py-4 px-2">
+              <p className="text-base font-semibold text-danger">UPI Not Configured</p>
+              <p className="mt-1 text-sm text-ink-soft">
+                UPI ID is missing. Please ask your administrator to configure business details for {businessName}.
+              </p>
+            </div>
+          )}
         </div>
       )}
     </div>

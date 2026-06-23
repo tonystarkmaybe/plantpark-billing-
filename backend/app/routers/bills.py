@@ -342,6 +342,27 @@ def summary_for_day(
         upi_total += upi
         due_total += due
 
+    # Fetch expenses for the day
+    target_shop_id = user.shop_id
+    if user.role == "admin" and shop_id is not None:
+        target_shop_id = shop_id
+
+    expenses_rows = []
+    if target_shop_id is not None:
+        from app.models.expense import Expense
+        stmt_exp = select(Expense).where(
+            Expense.shop_id == target_shop_id,
+            Expense.created_at >= start,
+            Expense.created_at < end
+        )
+        if created_by is not None:
+            stmt_exp = stmt_exp.where(Expense.created_by == created_by)
+        stmt_exp = stmt_exp.order_by(Expense.created_at.desc())
+        expenses_rows = list(db.execute(stmt_exp).scalars())
+
+    total_expenses = sum((e.amount for e in expenses_rows), ZERO)
+    net_sales = total_sales - total_expenses
+
     return BillSummaryOut(
         date=day,
         total_sales=q2(total_sales),
@@ -349,6 +370,9 @@ def summary_for_day(
         cash_total=q2(cash_total),
         upi_total=q2(upi_total),
         due_total=q2(due_total),
+        total_expenses=q2(total_expenses),
+        net_sales=q2(net_sales),
+        expenses=expenses_rows,
     )
 
 
@@ -698,6 +722,21 @@ def _generate_report_data(
         for row in prod_rows
     ]
 
+    # Fetch expenses for the period
+    from app.models.expense import Expense
+    stmt_exp = select(Expense).where(
+        Expense.shop_id == shop_id,
+        Expense.created_at >= start_utc,
+        Expense.created_at < end_utc,
+    )
+    if created_by is not None:
+        stmt_exp = stmt_exp.where(Expense.created_by == created_by)
+    stmt_exp = stmt_exp.order_by(Expense.created_at.desc())
+    expenses_rows = list(db.execute(stmt_exp).scalars())
+
+    total_expenses = sum((e.amount for e in expenses_rows), ZERO)
+    net_sales = total_sales - total_expenses
+
     return DetailedReportResponse(
         start_date=date_from,
         end_date=date_to,
@@ -707,6 +746,9 @@ def _generate_report_data(
         upi_total=q2(upi_total),
         due_total=q2(due_total),
         average_bill_value=average_bill_value,
+        total_expenses=q2(total_expenses),
+        net_sales=q2(net_sales),
+        expenses=expenses_rows,
         categories=categories,
         top_products=top_products,
     )
@@ -724,6 +766,9 @@ def _format_report_whatsapp(report: DetailedReportResponse, shop_name: str) -> s
         f"💵 *Cash Collected*: ₹{report.cash_total:.2f}",
         f"📱 *UPI Collected*: ₹{report.upi_total:.2f}",
         f"⚠️ *Due Outstanding*: ₹{report.due_total:.2f}",
+        "--------------------------------",
+        f"📉 *Total Expenses*: ₹{report.total_expenses:.2f}",
+        f"📈 *Net Income*: ₹{report.net_sales:.2f}",
         "--------------------------------",
         "*Top Categories*:"
     ]
@@ -808,6 +853,8 @@ def download_detailed_report(
     writer.writerow(["Cash Collected", f"INR {report.cash_total:.2f}"])
     writer.writerow(["UPI Collected", f"INR {report.upi_total:.2f}"])
     writer.writerow(["Due Amount", f"INR {report.due_total:.2f}"])
+    writer.writerow(["Total Expenses", f"INR {report.total_expenses:.2f}"])
+    writer.writerow(["Net Income", f"INR {report.net_sales:.2f}"])
     writer.writerow([])
 
     writer.writerow(["Sales by Category"])
@@ -820,6 +867,14 @@ def download_detailed_report(
     writer.writerow(["Product Name", "Quantity Sold", "Total Revenue"])
     for prod in report.top_products:
         writer.writerow([prod.product_name, prod.quantity, f"INR {prod.total_sales:.2f}"])
+
+    writer.writerow([])
+    writer.writerow(["Detailed Expenses Log"])
+    writer.writerow(["Date & Time", "Recorded By", "Reason / Description", "Amount"])
+    for exp in report.expenses:
+        creator_email = _user_email(db, exp.created_by) or "System"
+        date_str = exp.created_at.astimezone(SHOP_TZ).strftime("%Y-%m-%d %H:%M")
+        writer.writerow([date_str, creator_email, exp.reason, f"INR {exp.amount:.2f}"])
 
     output.seek(0)
 

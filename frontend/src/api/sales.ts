@@ -1,4 +1,5 @@
 import { api } from "./client";
+import type { ExpenseRow } from "./expenses";
 
 export type PaymentMethod = "cash" | "upi" | "split" | "due";
 
@@ -9,6 +10,9 @@ export interface BillSummary {
   cash_total: string;
   upi_total: string;
   due_total: string;
+  total_expenses: string;
+  net_sales: string;
+  expenses: ExpenseRow[];
 }
 
 export interface BillListItem {
@@ -123,6 +127,9 @@ export interface DetailedReportResponse {
   upi_total: string;
   due_total: string;
   average_bill_value: string;
+  total_expenses: string;
+  net_sales: string;
+  expenses: ExpenseRow[];
   categories: CategorySales[];
   top_products: ProductSales[];
 }

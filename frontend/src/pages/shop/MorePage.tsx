@@ -16,12 +16,30 @@ import {
   type Salesperson,
 } from "@/api/shop_users";
 import { friendlyError } from "@/api/client";
-import { UserPlus, Key, UserCheck, UserX, AlertCircle, Trash2 } from "lucide-react";
+import { UserPlus, Key, UserCheck, UserX, AlertCircle, Trash2, Bluetooth, Printer } from "lucide-react";
+import { useBluetoothPrinter } from "@/store/bluetooth";
 
 export function MorePage() {
   const user = useAuth((s) => s.user);
   const logout = useAuth((s) => s.logout);
   const navigate = useNavigate();
+
+  const {
+    status: printerStatus,
+    deviceName: printerName,
+    connectionType: printerType,
+    error: printerError,
+    autoCut,
+    setAutoCut,
+    connect: connectPrinter,
+    connectUsb: connectUsbPrinter,
+    disconnect: disconnectPrinter,
+    printTest,
+  } = useBluetoothPrinter();
+
+  const isBluetoothSupported = typeof navigator !== "undefined" && !!(navigator as any).bluetooth;
+  const isUsbSupported = typeof navigator !== "undefined" && !!(navigator as any).usb;
+  const isAnyPrinterSupported = isBluetoothSupported || isUsbSupported;
 
   const [salespeople, setSalespeople] = useState<Salesperson[]>([]);
   const [loading, setLoading] = useState(false);
@@ -115,6 +133,153 @@ export function MorePage() {
           </Button>
         </div>
       </div>
+
+      {/* Bluetooth/USB Thermal Printer Setup Card */}
+      <div className="rounded-2xl border border-border bg-white p-5 shadow-sm space-y-4">
+        <div className="flex items-center gap-3">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+            <Printer className="h-6 w-6" />
+          </div>
+          <div>
+            <h2 className="text-xl font-bold text-ink">Thermal Printer Connection</h2>
+            <p className="text-sm text-ink-soft mt-0.5">Configure and pair your receipt printer via Bluetooth or USB.</p>
+          </div>
+        </div>
+
+        {!isAnyPrinterSupported ? (
+          <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 text-sm text-amber-800 flex items-start gap-2.5 text-left">
+            <AlertCircle className="h-5 w-5 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-bold">Printing APIs Unsupported</p>
+              <p className="mt-0.5 leading-relaxed">
+                Your browser does not support Web Bluetooth, Web Serial, or Web USB. Please use Chrome or Edge on HTTPS/localhost for printing.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="border-t border-border pt-4 space-y-4">
+            {/* Status details */}
+            <div className="flex justify-between items-center text-base">
+              <span className="text-ink-soft font-semibold">Connection Status:</span>
+              <span className={`font-bold capitalize px-3 py-1 rounded-full text-sm flex items-center gap-1.5 ${
+                printerStatus === "connected"
+                  ? "text-emerald-700 bg-emerald-50"
+                  : printerStatus === "connecting"
+                    ? "text-blue-700 bg-blue-50"
+                    : "text-slate-500 bg-slate-100"
+              }`}>
+                <span className={`h-2.5 w-2.5 rounded-full ${
+                  printerStatus === "connected"
+                    ? "bg-emerald-500 animate-pulse"
+                    : printerStatus === "connecting"
+                      ? "bg-blue-500 animate-pulse"
+                      : "bg-slate-400"
+                }`} />
+                {printerStatus === "connected"
+                  ? `${
+                      printerType === "serial"
+                        ? "USB / Serial"
+                        : printerType === "usb"
+                          ? "Direct USB"
+                          : "Bluetooth BLE"
+                    }: ${printerName}`
+                  : printerStatus === "connecting"
+                    ? "Connecting..."
+                    : "Disconnected"}
+              </span>
+            </div>
+
+            {printerError && (
+              <div className="rounded-xl bg-red-50 border border-red-100 p-3 text-sm font-semibold text-red-600 flex items-start gap-2 text-left">
+                <AlertCircle className="h-4.5 w-4.5 shrink-0 mt-0.5" />
+                <span className="break-words">{printerError}</span>
+              </div>
+            )}
+
+            {/* Print Settings controls */}
+            <div className="border-t border-border pt-4">
+              <div className="flex items-center justify-between border border-border rounded-xl p-4 bg-slate-50">
+                <div className="pr-4">
+                  <p className="font-semibold text-ink text-base">Auto-Cut Paper</p>
+                  <p className="text-xs text-ink-soft leading-normal mt-0.5">Send cut instruction. Disable if printer jams or prints garbage.</p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                  <input
+                    type="checkbox"
+                    checked={autoCut}
+                    onChange={(e) => setAutoCut(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                </label>
+              </div>
+            </div>
+
+            {/* Connection Actions */}
+            <div className="border-t border-border pt-4">
+              {printerStatus === "connected" ? (
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <Button
+                    variant="secondary"
+                    className="flex-1 text-base border-2"
+                    onClick={disconnectPrinter}
+                  >
+                    Disconnect Printer
+                  </Button>
+                  <Button
+                    variant="primary"
+                    className="flex-1 text-base flex items-center justify-center gap-2 font-bold"
+                    onClick={async () => {
+                      try {
+                        await printTest();
+                      } catch (err) {
+                        alert(friendlyError(err, "Failed to send test receipt."));
+                      }
+                    }}
+                  >
+                    <Printer className="h-5 w-5" /> Print Test
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full">
+                    <div>
+                      <Button
+                        variant="primary"
+                        className="w-full text-base flex items-center justify-center gap-2 font-bold py-2.5"
+                        disabled={printerStatus === "connecting" || !isBluetoothSupported}
+                        loading={printerStatus === "connecting"}
+                        onClick={connectPrinter}
+                      >
+                        <Bluetooth className="h-5 w-5" /> Connect Bluetooth BLE
+                      </Button>
+                      {!isBluetoothSupported && (
+                        <p className="text-xs text-red-500 text-center mt-1">Bluetooth unsupported in this browser</p>
+                      )}
+                    </div>
+
+                    <div>
+                      <Button
+                        variant="secondary"
+                        className="w-full text-base flex items-center justify-center gap-2 font-bold border-2 bg-white py-2.5"
+                        disabled={printerStatus === "connecting" || !isUsbSupported}
+                        loading={printerStatus === "connecting"}
+                        onClick={connectUsbPrinter}
+                      >
+                        <Printer className="h-5 w-5" /> Connect Direct USB
+                      </Button>
+                      {!isUsbSupported && (
+                        <p className="text-xs text-red-500 text-center mt-1">Direct USB unsupported in this browser</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
 
       {/* Salesperson Management (Owner Only) */}
       {isOwner && (
@@ -487,3 +652,4 @@ function ResetSalespersonPasswordSheet({
     </BottomSheet>
   );
 }
+

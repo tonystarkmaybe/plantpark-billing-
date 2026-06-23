@@ -11,6 +11,8 @@ export interface User {
   is_active: boolean;
   // Optional shop display name if the backend includes it on /auth/me later.
   shop_name?: string | null;
+  business_name?: string | null;
+  business_upi?: string | null;
 }
 
 export interface LoginResponse {

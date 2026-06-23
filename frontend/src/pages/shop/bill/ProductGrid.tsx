@@ -4,6 +4,7 @@ import { formatINR, toPaise } from "@/lib/money";
 import { ProductThumb } from "@/components/ProductThumb";
 import { useBilling } from "@/store/billing";
 import { Trash2, Plus, Minus, Search } from "lucide-react";
+import { VoiceSearchButton } from "@/components/VoiceSearchButton";
 
 interface ProductGridProps {
   products: Product[];
@@ -23,6 +24,11 @@ export function ProductGrid({ products }: ProductGridProps) {
     for (const p of products) if (p.category) set.add(p.category);
     return Array.from(set).sort();
   }, [products]);
+
+  const candidates = useMemo(() => {
+    const names = products.map((p) => p.name);
+    return [...names, ...categories];
+  }, [products, categories]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -45,9 +51,18 @@ export function ProductGrid({ products }: ProductGridProps) {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search by item name, SKU ID or category"
-          className="field pl-10"
+          className="field pl-10 pr-12"
           aria-label="Search products"
         />
+        <div className="absolute inset-y-0 right-0 flex items-center pr-2">
+          <VoiceSearchButton
+            candidates={candidates}
+            onTranscript={(text) => {
+              setQuery(text);
+              setCategory(null);
+            }}
+          />
+        </div>
       </div>
 
       {/* Category Tabs */}

@@ -57,10 +57,14 @@ def me(
     db: Session = Depends(get_db),
 ) -> CurrentUser:
     shop_name = None
+    business_name = None
+    business_upi = None
     if user.shop_id is not None:
         shop = db.execute(select(Shop).where(Shop.id == user.shop_id)).scalar_one_or_none()
         if shop:
             shop_name = shop.name
+            business_name = shop.business_name
+            business_upi = shop.business_upi
 
     return CurrentUser(
         id=user.id,
@@ -69,4 +73,6 @@ def me(
         shop_id=user.shop_id,
         is_active=user.is_active,
         shop_name=shop_name,
+        business_name=business_name,
+        business_upi=business_upi,
     )

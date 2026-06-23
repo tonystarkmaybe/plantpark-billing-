@@ -33,6 +33,14 @@ export function BusinessDetailsModal({ shop, onClose, onSaved }: BusinessDetails
 
   async function handleSave() {
     if (!shop) return;
+    const trimmedUpi = businessUpi.trim();
+    if (trimmedUpi) {
+      const upiRegex = /^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$/;
+      if (!upiRegex.test(trimmedUpi)) {
+        setError("Invalid UPI ID (VPA) format. Must be like username@bank.");
+        return;
+      }
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -41,7 +49,7 @@ export function BusinessDetailsModal({ shop, onClose, onSaved }: BusinessDetails
         business_address: businessAddress.trim() || null,
         business_phone: businessPhone.trim() || null,
         business_email: businessEmail.trim() || null,
-        business_upi: businessUpi.trim() || null,
+        business_upi: trimmedUpi || null,
       });
       onSaved();
       onClose();

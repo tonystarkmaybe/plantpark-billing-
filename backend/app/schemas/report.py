@@ -4,6 +4,7 @@ import datetime as dt
 import decimal
 import uuid
 from pydantic import BaseModel, field_serializer
+from app.schemas.expense import ExpenseOut
 
 
 class CategorySales(BaseModel):
@@ -35,10 +36,13 @@ class DetailedReportResponse(BaseModel):
     upi_total: decimal.Decimal
     due_total: decimal.Decimal
     average_bill_value: decimal.Decimal
+    total_expenses: decimal.Decimal
+    net_sales: decimal.Decimal
+    expenses: list[ExpenseOut]
     categories: list[CategorySales]
     top_products: list[ProductSales]
 
-    @field_serializer("total_sales", "cash_total", "upi_total", "due_total", "average_bill_value")
+    @field_serializer("total_sales", "cash_total", "upi_total", "due_total", "average_bill_value", "total_expenses", "net_sales")
     def _ser_money(self, v: decimal.Decimal) -> str:
         return f"{v:.2f}"
 

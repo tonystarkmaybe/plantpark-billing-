@@ -3,7 +3,8 @@ from __future__ import annotations
 import datetime as dt
 import uuid
 
-from pydantic import BaseModel, EmailStr, Field
+import re
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
 class ShopCreateRequest(BaseModel):
@@ -74,6 +75,21 @@ class ShopUpdateRequest(BaseModel):
     business_phone: str | None = None
     business_email: str | None = None
     business_upi: str | None = None
+
+    @field_validator("business_upi")
+    @classmethod
+    def validate_upi(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v_clean = v.strip()
+        if not v_clean:
+            return None
+        
+        # Pattern matching: ^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$
+        upi_pattern = re.compile(r"^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$")
+        if not upi_pattern.match(v_clean):
+            raise ValueError("Invalid UPI ID (VPA) format. Must match standard format like username@bank.")
+        return v_clean
 
 
 class ResetPasswordRequest(BaseModel):

@@ -32,5 +32,7 @@ class CurrentUser(BaseModel):
     shop_id: uuid.UUID | None = None
     is_active: bool
     shop_name: str | None = None
+    business_name: str | None = None
+    business_upi: str | None = None
 
     model_config = {"from_attributes": True}

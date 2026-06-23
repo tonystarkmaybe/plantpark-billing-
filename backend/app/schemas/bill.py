@@ -7,6 +7,8 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, Field, StringConstraints
 
 from app.schemas.money import MoneyIn, MoneyOut, MoneyOutOpt
+from app.schemas.expense import ExpenseOut
+
 
 NonEmptyStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
@@ -99,6 +101,10 @@ class BillSummaryOut(BaseModel):
     cash_total: MoneyOut
     upi_total: MoneyOut
     due_total: MoneyOut
+    total_expenses: MoneyOut
+    net_sales: MoneyOut
+    expenses: list[ExpenseOut]
+
 
 
 class BillListItem(BaseModel):

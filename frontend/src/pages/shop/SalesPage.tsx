@@ -173,6 +173,7 @@ export function SalesPage() {
         loading={sumLoading}
         error={sumError}
         onRetry={() => loadSummary(date, selectedStaffId)}
+        onExpenseAdded={refresh}
       />
 
       <div className="space-y-3">

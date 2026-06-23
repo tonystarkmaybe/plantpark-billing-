@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, Printer } from "lucide-react";
+import { useBluetoothPrinter } from "@/store/bluetooth";
 import { fetchBillDetail, deleteBill, type BillDetail } from "@/api/sales";
 import { friendlyError } from "@/api/client";
 import { Spinner } from "@/components/Spinner";
@@ -24,6 +25,33 @@ interface BillDetailViewProps {
 export function BillDetailView({ billId, onClose, onUpdated }: BillDetailViewProps) {
   const reduce = useReducedMotion();
   const [bill, setBill] = useState<BillDetail | null>(null);
+  const [printing, setPrinting] = useState(false);
+  const { status } = useBluetoothPrinter();
+
+  const handlePrint = async () => {
+    if (!bill) return;
+    setPrinting(true);
+    try {
+      const printerStore = useBluetoothPrinter.getState();
+      if (printerStore.status !== "connected") {
+        const pref = printerStore.preferredConnectionType;
+        if (pref === "serial") {
+          await printerStore.connectSerial();
+        } else if (pref === "usb") {
+          await printerStore.connectUsb();
+        } else {
+          await printerStore.connect();
+        }
+      }
+      if (useBluetoothPrinter.getState().status === "connected") {
+        await useBluetoothPrinter.getState().printReceipt(bill);
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to print receipt.");
+    } finally {
+      setPrinting(false);
+    }
+  };
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
@@ -170,11 +198,15 @@ export function BillDetailView({ billId, onClose, onUpdated }: BillDetailViewPro
                   </div>
                 )}
                 <div className="grid grid-cols-2 gap-3">
-                  <Button variant="secondary" size="action" disabled>
-                    Print
-                    <span className="ml-1 rounded-full bg-surface-muted px-2 py-0.5 text-sm font-semibold text-ink-soft">
-                      Soon
-                    </span>
+                  <Button
+                    variant="secondary"
+                    size="action"
+                    className="font-bold flex items-center justify-center gap-2 border-2 bg-white"
+                    loading={printing}
+                    onClick={handlePrint}
+                  >
+                    <Printer className="h-5 w-5" />
+                    {status === "connected" ? "Print" : "Connect & Print"}
                   </Button>
                   <Button variant="secondary" size="action" disabled>
                     WhatsApp

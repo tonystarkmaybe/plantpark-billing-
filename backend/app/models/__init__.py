@@ -10,5 +10,6 @@ from app.models.user import User
 from app.models.product import Product
 from app.models.customer import Customer
 from app.models.bill import Bill, BillItem
+from app.models.expense import Expense
 
-__all__ = ["Base", "Shop", "User", "Product", "Customer", "Bill", "BillItem"]
+__all__ = ["Base", "Shop", "User", "Product", "Customer", "Bill", "BillItem", "Expense"]

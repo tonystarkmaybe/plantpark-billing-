@@ -379,6 +379,26 @@ export function DetailedReportSheet({ open, onClose, staffList, currentUserEmail
               </div>
             </div>
 
+            {/* Expenses & Net Income Metrics Grid */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="rounded-2xl border border-border bg-slate-50 p-4 text-center">
+                <span className="text-xs font-bold text-ink-soft uppercase tracking-wider block">Total Expenses</span>
+                <span className="text-2xl font-black text-danger mt-1 block">
+                  {parseFloat(report.total_expenses) > 0 ? "− " : ""}
+                  {formatINR(toPaise(report.total_expenses))}
+                </span>
+              </div>
+              <div className="rounded-2xl border border-border bg-slate-50 p-4 text-center">
+                <span className="text-xs font-bold text-ink-soft uppercase tracking-wider block">Net Income</span>
+                <span className={`text-2xl font-black mt-1 block ${
+                  parseFloat(report.net_sales) >= 0 ? "text-emerald-600" : "text-danger"
+                }`}>
+                  {parseFloat(report.net_sales) < 0 ? "− " : ""}
+                  {formatINR(toPaise(Math.abs(parseFloat(report.net_sales)).toString()))}
+                </span>
+              </div>
+            </div>
+
             {/* Split collected statistics */}
             <div className="grid grid-cols-3 gap-3">
               <div className="rounded-xl border border-border bg-white px-4 py-3 shadow-sm">
@@ -445,6 +465,46 @@ export function DetailedReportSheet({ open, onClose, staffList, currentUserEmail
                           <td className="px-4 py-3">{prod.product_name}</td>
                           <td className="px-4 py-3 text-center text-ink-soft">{prod.quantity}</td>
                           <td className="px-4 py-3 text-right font-bold">{formatINR(toPaise(prod.total_sales))}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* Detailed Expenses Log */}
+            <div className="space-y-2">
+              <h4 className="text-lg font-bold text-ink">Detailed Expenses Log</h4>
+              {!report.expenses || report.expenses.length === 0 ? (
+                <div className="py-6 text-center border-2 border-dashed border-slate-200 rounded-xl bg-slate-50/50">
+                  <p className="text-sm font-medium text-ink-soft">No expenses recorded during this period.</p>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-border overflow-hidden bg-white shadow-sm font-medium">
+                  <table className="w-full text-left text-base border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-border text-ink-soft font-bold">
+                        <th className="px-4 py-3">Date</th>
+                        <th className="px-4 py-3">Reason / Description</th>
+                        <th className="px-4 py-3 text-right">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border text-ink">
+                      {report.expenses.map((exp, idx) => (
+                        <tr key={idx} className="hover:bg-slate-50/50">
+                          <td className="px-4 py-3 text-ink-soft text-sm">
+                            {new Intl.DateTimeFormat("en-IN", {
+                              day: "numeric",
+                              month: "short",
+                              hour: "numeric",
+                              minute: "numeric",
+                            }).format(new Date(exp.created_at))}
+                          </td>
+                          <td className="px-4 py-3">{exp.reason}</td>
+                          <td className="px-4 py-3 text-right font-bold text-danger">
+                            − ₹{parseFloat(exp.amount).toFixed(2)}
+                          </td>
                         </tr>
                       ))}
                     </tbody>

@@ -8,6 +8,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { CreateShopModal } from "./CreateShopModal";
 import { ResetPasswordModal } from "./ResetPasswordModal";
 import { BusinessDetailsModal } from "./BusinessDetailsModal";
+import { VoiceSearchButton } from "@/components/VoiceSearchButton";
 
 type StatusFilter = "all" | "active" | "inactive";
 
@@ -32,6 +33,12 @@ export function ShopsPage() {
 
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const candidates = useMemo(() => {
+    const names = shops.map((s) => s.name);
+    const owners = shops.map((s) => s.owner_name).filter(Boolean) as string[];
+    return [...names, ...owners];
+  }, [shops]);
   const showToast = (m: string) => {
     setToast(m);
     if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -130,13 +137,18 @@ export function ShopsPage() {
 
       {/* Filters */}
       <div className="mt-4 flex flex-wrap items-center gap-2">
-        <input
-          type="search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search shop, owner, email, phone…"
-          className="h-11 min-w-[14rem] flex-1 rounded-control border-2 border-border bg-white px-3 text-base text-ink focus:border-primary-600 focus:outline-none focus:ring-4 focus:ring-primary-600/20"
-        />
+        <div className="relative flex-1 min-w-[14rem]">
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search shop, owner, email, phone…"
+            className="h-11 w-full rounded-control border-2 border-border bg-white pl-3 pr-12 text-base text-ink focus:border-primary-600 focus:outline-none focus:ring-4 focus:ring-primary-600/20"
+          />
+          <div className="absolute inset-y-0 right-0 flex items-center pr-2">
+            <VoiceSearchButton candidates={candidates} onTranscript={(text) => setQuery(text)} />
+          </div>
+        </div>
         <div className="flex gap-1 rounded-control bg-surface-muted p-1">
           {(["all", "active", "inactive"] as StatusFilter[]).map((s) => (
             <button
