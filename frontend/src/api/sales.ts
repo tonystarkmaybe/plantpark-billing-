@@ -62,6 +62,9 @@ export interface BillDetail {
   remarks: string | null;
   is_edited: boolean;
   created_at: string;
+  whatsapp_status?: string | null;
+  whatsapp_error?: string | null;
+  invoice_url?: string | null;
   items: BillDetailItem[];
 }
 

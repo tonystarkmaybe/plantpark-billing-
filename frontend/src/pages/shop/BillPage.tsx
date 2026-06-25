@@ -137,7 +137,7 @@ export function BillPage() {
 
   // ── Render ──────────────────────────────────────────────────────────────────
   if (savedBill) {
-    return <SuccessView bill={savedBill} onNewBill={handleNewBill} />;
+    return <SuccessView bill={savedBill} onNewBill={handleNewBill} customerPhone={customer.phone || undefined} />;
   }
 
   return (

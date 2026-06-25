@@ -45,9 +45,19 @@ class WhatsAppCloudClient:
             "type": "document",
         }
 
+        logger.info(
+            "Meta Request Started | URL: %s | Method: POST | Payload (messaging_product: %s, type: %s, file_name: %s)",
+            url, data["messaging_product"], data["type"], file_name
+        )
+
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 resp = await client.post(url, headers=self.headers, data=data, files=files)
+            
+            logger.info(
+                "Meta Response Received | URL: %s | Status: %s | Body: %s",
+                url, resp.status_code, resp.text
+            )
             
             if resp.status_code < 200 or resp.status_code >= 300:
                 raise WhatsAppAPIError(
@@ -65,6 +75,7 @@ class WhatsAppCloudClient:
             return str(media_id)
 
         except httpx.HTTPError as e:
+            logger.error("HTTP connection error during media upload: %s", e)
             raise WhatsAppAPIError(f"HTTP connection error during media upload: {e}")
 
     async def send_document_message(self, to_phone: str, media_id: str, file_name: str, caption: str | None = None) -> str:
@@ -90,9 +101,19 @@ class WhatsAppCloudClient:
         if caption:
             payload["document"]["caption"] = caption
 
+        logger.info(
+            "Meta Request Started | URL: %s | Method: POST | Payload: %s",
+            url, payload
+        )
+
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 resp = await client.post(url, headers=self.headers, json=payload)
+
+            logger.info(
+                "Meta Response Received | URL: %s | Status: %s | Body: %s",
+                url, resp.status_code, resp.text
+            )
 
             if resp.status_code < 200 or resp.status_code >= 300:
                 raise WhatsAppAPIError(
@@ -111,6 +132,7 @@ class WhatsAppCloudClient:
             return str(msg_id)
 
         except httpx.HTTPError as e:
+            logger.error("HTTP connection error during document send: %s", e)
             raise WhatsAppAPIError(f"HTTP connection error during document send: {e}")
 
     async def send_template_document(
@@ -169,9 +191,19 @@ class WhatsAppCloudClient:
             }
         }
 
+        logger.info(
+            "Meta Request Started | URL: %s | Method: POST | Payload: %s",
+            url, payload
+        )
+
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 resp = await client.post(url, headers=self.headers, json=payload)
+
+            logger.info(
+                "Meta Response Received | URL: %s | Status: %s | Body: %s",
+                url, resp.status_code, resp.text
+            )
 
             if resp.status_code < 200 or resp.status_code >= 300:
                 raise WhatsAppAPIError(
@@ -190,4 +222,5 @@ class WhatsAppCloudClient:
             return str(msg_id)
 
         except httpx.HTTPError as e:
+            logger.error("HTTP connection error during template send: %s", e)
             raise WhatsAppAPIError(f"HTTP connection error during template send: {e}")

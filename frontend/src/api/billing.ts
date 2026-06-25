@@ -73,6 +73,26 @@ export async function sendBillWhatsApp(billId: string): Promise<SendWhatsAppResu
   return data;
 }
 
+export interface WhatsAppStatusOut {
+  status: string;
+  message_id: string | null;
+  error: string | null;
+  sent_at: string | null;
+  last_retry_at: string | null;
+  retry_count: number;
+  invoice_url: string | null;
+}
+
+export async function resendBillWhatsApp(billId: string): Promise<SendWhatsAppResult> {
+  const { data } = await api.post<SendWhatsAppResult>(`/bills/${billId}/resend-whatsapp`);
+  return data;
+}
+
+export async function getBillWhatsAppStatus(billId: string): Promise<WhatsAppStatusOut> {
+  const { data } = await api.get<WhatsAppStatusOut>(`/bills/${billId}/whatsapp-status`);
+  return data;
+}
+
 export async function fetchPublicBill(billId: string): Promise<BillOut> {
   const { data } = await api.get<BillOut>(`/bills/public/${billId}`);
   return data;

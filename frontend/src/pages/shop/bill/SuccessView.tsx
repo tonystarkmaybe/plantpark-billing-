@@ -9,6 +9,7 @@ import { useBluetoothPrinter } from "@/store/bluetooth";
 interface SuccessViewProps {
   bill: BillOut;
   onNewBill: () => void;
+  customerPhone?: string;
 }
 
 /**
@@ -16,7 +17,7 @@ interface SuccessViewProps {
  * how it was paid, and the bill reference. "New Bill" is the one clear next
  * action. Print + WhatsApp are visible placeholders (out of scope this prompt).
  */
-export function SuccessView({ bill, onNewBill }: SuccessViewProps) {
+export function SuccessView({ bill, onNewBill, customerPhone }: SuccessViewProps) {
   const reduce = useReducedMotion();
   const [printing, setPrinting] = useState(false);
   const [sendingWa, setSendingWa] = useState(false);
@@ -26,15 +27,9 @@ export function SuccessView({ bill, onNewBill }: SuccessViewProps) {
     setSendingWa(true);
     try {
       const res = await sendBillWhatsApp(bill.id);
-      if (res.status === "sent_via_wati") {
-        alert("Receipt sent successfully via WhatsApp!");
-      } else if (res.wa_me_url) {
-        window.open(res.wa_me_url, "_blank");
-      } else {
-        alert(res.detail || "Unable to send WhatsApp message.");
-      }
+      alert(res.detail || "WhatsApp invoice queued for sending successfully!");
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to share on WhatsApp.");
+      alert(err instanceof Error ? err.message : "Failed to queue WhatsApp invoice.");
     } finally {
       setSendingWa(false);
     }
@@ -107,6 +102,13 @@ export function SuccessView({ bill, onNewBill }: SuccessViewProps) {
 
       {bill.customer_name && (
         <div className="mt-1 text-base text-ink-soft">For {bill.customer_name}</div>
+      )}
+
+      {customerPhone && (
+        <div className="mt-3 rounded-xl bg-emerald-50 border border-emerald-100 px-4 py-2.5 text-sm font-semibold text-emerald-800 flex items-center justify-center gap-1.5 animate-pulse max-w-xs mx-auto">
+          <span className="h-2 w-2 rounded-full bg-emerald-500 shrink-0 animate-ping" />
+          <span>Sending invoice to {customerPhone} via WhatsApp</span>
+        </div>
       )}
 
       <div className="mt-2 text-base text-ink-soft font-medium">

@@ -22,6 +22,17 @@ from app.routers.shop import router as shop_router
 from app.routers.shop_users import router as shop_users_router
 from app.routers.expenses import router as expenses_router
 from app.services.whatsapp.worker import start_whatsapp_worker, stop_whatsapp_worker
+import logging
+import sys
+
+# Configure logging for plantora namespace to print to stdout
+plantora_logger = logging.getLogger("plantora")
+plantora_logger.setLevel(logging.INFO)
+if not plantora_logger.handlers:
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+    plantora_logger.addHandler(handler)
+    plantora_logger.propagate = False  # Avoid double logging if root has handlers
 
 settings = get_settings()
 
@@ -30,6 +41,18 @@ settings = get_settings()
 async def lifespan(app: FastAPI):
     # Start the async background WhatsApp worker loop on boot
     worker_task = start_whatsapp_worker()
+    
+    # Log loaded WhatsApp credentials presence (do not print secrets)
+    logger = logging.getLogger("plantora.startup")
+    logger.info("Checking Meta WhatsApp Cloud API credentials presence:")
+    logger.info("  WHATSAPP_ENABLED: %s", settings.WHATSAPP_ENABLED)
+    logger.info("  WHATSAPP_PHONE_NUMBER_ID: %s", "PRESENT" if settings.WHATSAPP_PHONE_NUMBER_ID else "MISSING")
+    logger.info("  WHATSAPP_ACCESS_TOKEN: %s", "PRESENT" if settings.WHATSAPP_ACCESS_TOKEN else "MISSING")
+    logger.info("  WHATSAPP_BUSINESS_ACCOUNT_ID: %s", "PRESENT" if settings.WHATSAPP_BUSINESS_ACCOUNT_ID else "MISSING")
+    logger.info("  WHATSAPP_API_VERSION: %s", settings.WHATSAPP_API_VERSION or "MISSING")
+    logger.info("  WHATSAPP_TEMPLATE_NAME: %s", settings.WHATSAPP_TEMPLATE_NAME or "MISSING")
+    logger.info("  WHATSAPP_VERIFY_TOKEN: %s", "PRESENT" if settings.WHATSAPP_VERIFY_TOKEN else "MISSING")
+    
     yield
     # Safely stop worker thread on shutdown
     await stop_whatsapp_worker(worker_task)

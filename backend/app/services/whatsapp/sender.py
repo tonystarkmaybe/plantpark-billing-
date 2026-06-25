@@ -1,7 +1,7 @@
 import logging
 import uuid
 import datetime as dt
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -9,7 +9,7 @@ from app.models.bill import Bill, BillItem
 from app.models.shop import Shop
 from app.models.customer import Customer
 from app.services.whatsapp.client import WhatsAppCloudClient
-from app.services.whatsapp.exceptions import WhatsAppError, PDFGenerationError
+from app.services.whatsapp.exceptions import WhatsAppError, PDFGenerationError, WhatsAppAPIError
 from app.services.whatsapp.media import generate_invoice_pdf, save_invoice_pdf
 from app.services.whatsapp.phone import normalize_indian_phone
 from app.services.whatsapp.eligibility import is_whatsapp_eligible
@@ -64,8 +64,11 @@ async def send_whatsapp_invoice_process(db: Session, bill: Bill) -> None:
     It never raises exceptions; all failures are logged and recorded in the DB.
     """
     # 1. Refresh & lock status to prevent duplicate worker pickup
+    db.execute(text("SELECT set_config('app.user_role', 'admin', true)"))
     bill.whatsapp_status = "sending"
     db.commit()
+    
+    db.execute(text("SELECT set_config('app.user_role', 'admin', true)"))
 
     try:
         # Load associated models
@@ -81,6 +84,11 @@ async def send_whatsapp_invoice_process(db: Session, bill: Bill) -> None:
 
         if not customer or not customer.phone:
             raise WhatsAppError("Customer or customer phone number is missing.")
+
+        logger.info(
+            "WhatsApp Send Process Started | Bill ID: %s | Customer Phone: %s | Retries: %s",
+            bill.id, customer.phone, bill.retry_count
+        )
 
         # Normalize phone number
         norm = normalize_indian_phone(customer.phone, settings.WHATSAPP_COUNTRY_CODE)
@@ -161,12 +169,18 @@ async def send_whatsapp_invoice_process(db: Session, bill: Bill) -> None:
         bill.whatsapp_status = "sent"
         bill.whatsapp_sent_at = dt.datetime.now(dt.timezone.utc)
         bill.whatsapp_error = None
-        logger.info("WhatsApp invoice successfully delivered for Bill %s. Msg ID: %s", bill.id, msg_id)
+        logger.info(
+            "WhatsApp Send Succeeded | Bill ID: %s | Message ID: %s",
+            bill.id, msg_id
+        )
 
     except Exception as e:
         # 6. Error & Retry Recording
         error_msg = str(e)
-        logger.error("Error in WhatsApp send process for Bill %s: %s", bill.id, error_msg)
+        logger.error(
+            "WhatsApp Send Failed | Bill ID: %s | Error: %s | Retries: %s",
+            bill.id, error_msg, bill.retry_count
+        )
         bill.whatsapp_status = "failed"
         bill.whatsapp_error = error_msg
         bill.last_retry_at = dt.datetime.now(dt.timezone.utc)

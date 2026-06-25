@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { ChevronLeft, Printer } from "lucide-react";
+import { ChevronLeft, Printer, FileText } from "lucide-react";
 import { useBluetoothPrinter } from "@/store/bluetooth";
 import { fetchBillDetail, deleteBill, type BillDetail } from "@/api/sales";
-import { sendBillWhatsApp } from "@/api/billing";
-import { friendlyError } from "@/api/client";
+import { resendBillWhatsApp } from "@/api/billing";
+import { friendlyError, getMediaUrl } from "@/api/client";
 import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/Button";
 import { BillReceipt } from "./BillReceipt";
@@ -34,19 +34,54 @@ export function BillDetailView({ billId, onClose, onUpdated }: BillDetailViewPro
     if (!bill) return;
     setSendingWa(true);
     try {
-      const res = await sendBillWhatsApp(bill.id);
-      if (res.status === "sent_via_wati") {
-        alert("Receipt sent successfully via WhatsApp!");
-      } else if (res.wa_me_url) {
-        window.open(res.wa_me_url, "_blank");
-      } else {
-        alert(res.detail || "Unable to send WhatsApp message.");
-      }
+      const res = await resendBillWhatsApp(bill.id);
+      alert(res.detail || "WhatsApp invoice queued for sending!");
+      // Reload details immediately
+      const detail = await fetchBillDetail(bill.id);
+      setBill(detail);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to share on WhatsApp.");
+      alert(friendlyError(err, "Failed to share on WhatsApp."));
     } finally {
       setSendingWa(false);
     }
+  };
+
+  const renderWhatsAppBadge = (status: string) => {
+    let classes = "text-slate-500 bg-slate-100";
+    let text = "Not Sent";
+
+    switch (status) {
+      case "queued":
+        classes = "text-amber-700 bg-amber-50 animate-pulse";
+        text = "Queued";
+        break;
+      case "sending":
+        classes = "text-blue-700 bg-blue-50 animate-pulse";
+        text = "Sending";
+        break;
+      case "sent":
+        classes = "text-emerald-600 bg-emerald-50";
+        text = "Sent";
+        break;
+      case "delivered":
+        classes = "text-emerald-700 bg-emerald-100";
+        text = "Delivered";
+        break;
+      case "read":
+        classes = "text-emerald-800 bg-emerald-200";
+        text = "Read";
+        break;
+      case "failed":
+        classes = "text-red-700 bg-red-50";
+        text = "Failed";
+        break;
+    }
+
+    return (
+      <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${classes}`}>
+        {text}
+      </span>
+    );
   };
 
   const handlePrint = async () => {
@@ -108,6 +143,26 @@ export function BillDetailView({ billId, onClose, onUpdated }: BillDetailViewPro
       cancelled = true;
     };
   }, [billId]);
+
+  // Polling WhatsApp status if queued or sending
+  useEffect(() => {
+    if (!billId || !bill) return;
+    const transientStates = ["queued", "sending"];
+    if (!transientStates.includes(bill.whatsapp_status || "")) return;
+
+    const timer = setInterval(async () => {
+      try {
+        const detail = await fetchBillDetail(billId);
+        if (detail.whatsapp_status !== bill.whatsapp_status) {
+          setBill(detail);
+        }
+      } catch (err) {
+        // Silently fail polling
+      }
+    }, 3000);
+
+    return () => clearInterval(timer);
+  }, [billId, bill]);
 
   // Close on Escape.
   useEffect(() => {
@@ -184,8 +239,65 @@ export function BillDetailView({ billId, onClose, onUpdated }: BillDetailViewPro
                 </Button>
               </div>
             ) : bill ? (
-              <div className="rounded-card border border-border bg-surface p-5 shadow-card">
-                <BillReceipt bill={bill} />
+              <div className="space-y-4">
+                <div className="rounded-card border border-border bg-surface p-5 shadow-card">
+                  <BillReceipt bill={bill} />
+                </div>
+
+                {/* WhatsApp Status Card */}
+                {bill.customer_phone ? (
+                  <div className="rounded-card border border-border bg-white p-5 shadow-sm space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-bold text-ink text-base">WhatsApp Delivery</h3>
+                      <div className="flex items-center gap-2">
+                        {renderWhatsAppBadge(bill.whatsapp_status || "none")}
+                      </div>
+                    </div>
+
+                    <div className="text-sm text-ink-soft leading-normal">
+                      {bill.whatsapp_status === "queued" && "Invoice is in queue to be sent to WhatsApp."}
+                      {bill.whatsapp_status === "sending" && "PDF invoice is being generated and uploaded."}
+                      {bill.whatsapp_status === "sent" && `Message sent to ${bill.customer_phone}.`}
+                      {bill.whatsapp_status === "delivered" && `Message delivered to ${bill.customer_phone}.`}
+                      {bill.whatsapp_status === "read" && `Customer read the invoice message.`}
+                      {bill.whatsapp_status === "failed" && (
+                        <div className="text-danger bg-danger-soft border border-danger/10 rounded-xl p-3 font-semibold text-xs mt-1 space-y-1">
+                          <p className="font-bold">Error details:</p>
+                          <p>{bill.whatsapp_error || "Unknown network error."}</p>
+                        </div>
+                      )}
+                      {(bill.whatsapp_status === "none" || !bill.whatsapp_status) && "No WhatsApp message sent yet."}
+                    </div>
+
+                    <div className="border-t border-border pt-3 flex flex-wrap gap-3">
+                      {bill.invoice_url && (
+                        <a
+                          href={getMediaUrl(bill.invoice_url) || "#"}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="flex-1 min-w-[140px] text-center inline-flex items-center justify-center gap-2 h-10 rounded-xl border border-border text-sm font-semibold text-ink hover:bg-slate-50 active:scale-98"
+                        >
+                          <FileText className="h-4.5 w-4.5" />
+                          View A4 PDF
+                        </a>
+                      )}
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="tap"
+                        className="flex-1 min-w-[140px] text-sm h-10 border-2 font-bold"
+                        loading={sendingWa}
+                        onClick={handleShareWhatsApp}
+                      >
+                        Resend Invoice
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-card border border-border bg-slate-50 p-4 text-center text-xs text-ink-soft">
+                    No phone number associated with this bill. WhatsApp delivery disabled.
+                  </div>
+                )}
               </div>
             ) : null}
           </div>

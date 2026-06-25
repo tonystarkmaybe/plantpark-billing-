@@ -16,8 +16,9 @@ import {
   type Salesperson,
 } from "@/api/shop_users";
 import { friendlyError } from "@/api/client";
-import { UserPlus, Key, UserCheck, UserX, AlertCircle, Trash2, Bluetooth, Printer } from "lucide-react";
+import { UserPlus, Key, UserCheck, UserX, AlertCircle, Trash2, Bluetooth, Printer, MessageSquare } from "lucide-react";
 import { useBluetoothPrinter } from "@/store/bluetooth";
+import { getShopSettings, updateShopSettings, type ShopSettings } from "@/api/shop";
 
 export function MorePage() {
   const user = useAuth((s) => s.user);
@@ -53,6 +54,80 @@ export function MorePage() {
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const isOwner = user?.role === "shop_owner";
+
+  const [settings, setSettings] = useState<ShopSettings | null>(null);
+  const [settingsLoading, setSettingsLoading] = useState(false);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [settingsSuccess, setSettingsSuccess] = useState(false);
+
+  // States for individual settings fields
+  const [businessName, setBusinessName] = useState("");
+  const [businessAddress, setBusinessAddress] = useState("");
+  const [businessPhone, setBusinessPhone] = useState("");
+  const [businessEmail, setBusinessEmail] = useState("");
+  const [businessUpi, setBusinessUpi] = useState("");
+  const [whatsappAutoSend, setWhatsappAutoSend] = useState(false);
+  const [whatsappEnablePdf, setWhatsappEnablePdf] = useState(false);
+  const [whatsappMessageTemplate, setWhatsappMessageTemplate] = useState("");
+  const [whatsappFooterMessage, setWhatsappFooterMessage] = useState("");
+  const [whatsappLanguage, setWhatsappLanguage] = useState("en");
+
+  const loadSettings = useCallback(async () => {
+    if (!isOwner) return;
+    setSettingsLoading(true);
+    setSettingsError(null);
+    try {
+      const data = await getShopSettings();
+      setSettings(data);
+      setBusinessName(data.business_name || "");
+      setBusinessAddress(data.business_address || "");
+      setBusinessPhone(data.business_phone || "");
+      setBusinessEmail(data.business_email || "");
+      setBusinessUpi(data.business_upi || "");
+      setWhatsappAutoSend(data.whatsapp_auto_send);
+      setWhatsappEnablePdf(data.whatsapp_enable_pdf);
+      setWhatsappMessageTemplate(data.whatsapp_message_template || "");
+      setWhatsappFooterMessage(data.whatsapp_footer_message || "");
+      setWhatsappLanguage(data.whatsapp_language || "en");
+    } catch (e) {
+      setSettingsError(friendlyError(e, "Couldn't load nursery settings."));
+    } finally {
+      setSettingsLoading(false);
+    }
+  }, [isOwner]);
+
+  useEffect(() => {
+    loadSettings();
+  }, [loadSettings]);
+
+  async function handleSaveSettings(e: React.FormEvent) {
+    e.preventDefault();
+    setSettingsSaving(true);
+    setSettingsSuccess(false);
+    setSettingsError(null);
+    try {
+      const updated = await updateShopSettings({
+        business_name: businessName || null,
+        business_address: businessAddress || null,
+        business_phone: businessPhone || null,
+        business_email: businessEmail || null,
+        business_upi: businessUpi || null,
+        whatsapp_auto_send: whatsappAutoSend,
+        whatsapp_enable_pdf: whatsappEnablePdf,
+        whatsapp_message_template: whatsappMessageTemplate || null,
+        whatsapp_footer_message: whatsappFooterMessage || null,
+        whatsapp_language: whatsappLanguage,
+      });
+      setSettings(updated);
+      setSettingsSuccess(true);
+      setTimeout(() => setSettingsSuccess(false), 3000);
+    } catch (e) {
+      setSettingsError(friendlyError(e, "Failed to save settings."));
+    } finally {
+      setSettingsSaving(false);
+    }
+  }
 
   const load = useCallback(async () => {
     if (!isOwner) return;
@@ -280,6 +355,174 @@ export function MorePage() {
         )}
       </div>
 
+      {/* WhatsApp & Invoice Settings (Owner Only) */}
+      {isOwner && (
+        <div className="rounded-2xl border border-border bg-white p-5 shadow-sm space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
+              <MessageSquare className="h-6 w-6" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-ink">WhatsApp & Invoice Settings</h2>
+              <p className="text-sm text-ink-soft mt-0.5">Customize your auto-send receipts, PDF formats, and business profile.</p>
+            </div>
+          </div>
+
+          {settingsLoading ? (
+            <div className="flex justify-center py-8">
+              <Spinner className="h-8 w-8 text-primary-600" />
+            </div>
+          ) : settingsError && !settings ? (
+            <div className="py-6 text-center text-danger font-semibold space-y-2">
+              <p>{settingsError}</p>
+              <Button variant="secondary" size="tap" onClick={loadSettings}>Try again</Button>
+            </div>
+          ) : (
+            <form onSubmit={handleSaveSettings} className="border-t border-border pt-4 space-y-5">
+              {settingsError && (
+                <div className="rounded-xl bg-red-50 border border-red-100 p-3 text-sm font-semibold text-red-600 flex items-start gap-2 text-left">
+                  <AlertCircle className="h-4.5 w-4.5 shrink-0 mt-0.5" />
+                  <span>{settingsError}</span>
+                </div>
+              )}
+
+              {settingsSuccess && (
+                <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-3 text-sm font-semibold text-emerald-800 flex items-start gap-2 text-left">
+                  <span className="h-2 w-2 rounded-full bg-emerald-500 mt-1.5" />
+                  <span>Settings updated successfully!</span>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Toggles */}
+                <div className="flex items-center justify-between border border-border rounded-xl p-4 bg-slate-50">
+                  <div className="pr-4">
+                    <p className="font-semibold text-ink text-base">Auto-WhatsApp Invoices</p>
+                    <p className="text-xs text-ink-soft leading-normal mt-0.5">Send a WhatsApp invoice template automatically after every checkout.</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                    <input
+                      type="checkbox"
+                      checked={whatsappAutoSend}
+                      onChange={(e) => setWhatsappAutoSend(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                  </label>
+                </div>
+
+                <div className="flex items-center justify-between border border-border rounded-xl p-4 bg-slate-50">
+                  <div className="pr-4">
+                    <p className="font-semibold text-ink text-base">Attach PDF Invoice</p>
+                    <p className="text-xs text-ink-soft leading-normal mt-0.5">Generate and attach a professional A4 PDF invoice to the message.</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                    <input
+                      type="checkbox"
+                      checked={whatsappEnablePdf}
+                      onChange={(e) => setWhatsappEnablePdf(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+                  </label>
+                </div>
+              </div>
+
+              {/* Template Configuration */}
+              <div className="space-y-4 border-t border-border pt-4">
+                <h3 className="text-lg font-bold text-ink">WhatsApp Cloud API Configuration</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <TextInput
+                    label="Meta Template Name"
+                    placeholder="e.g. invoice_template"
+                    value={whatsappMessageTemplate}
+                    onChange={(e) => setWhatsappMessageTemplate(e.target.value)}
+                  />
+
+                  <div>
+                    <label className="field-label">Template Language</label>
+                    <select
+                      value={whatsappLanguage}
+                      onChange={(e) => setWhatsappLanguage(e.target.value)}
+                      className="field"
+                    >
+                      <option value="en">English (en)</option>
+                      <option value="en_US">English US (en_US)</option>
+                      <option value="hi">Hindi (hi)</option>
+                      <option value="mr">Marathi (mr)</option>
+                      <option value="gu">Gujarati (gu)</option>
+                    </select>
+                  </div>
+
+                  <TextInput
+                    label="Custom Message Footer"
+                    placeholder="e.g. Thank you for your business!"
+                    value={whatsappFooterMessage}
+                    onChange={(e) => setWhatsappFooterMessage(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {/* Business Profile Details */}
+              <div className="space-y-4 border-t border-border pt-4">
+                <h3 className="text-lg font-bold text-ink">Nursery/Business Profile Details</h3>
+                <p className="text-sm text-ink-soft leading-normal -mt-2">These details are rendered onto your generated A4 PDF invoices.</p>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <TextInput
+                    label="Registered Business Name"
+                    placeholder="e.g. Green Leaf Nursery Ltd."
+                    value={businessName}
+                    onChange={(e) => setBusinessName(e.target.value)}
+                  />
+
+                  <TextInput
+                    label="UPI ID (for Payment QR)"
+                    placeholder="e.g. owner@upi"
+                    value={businessUpi}
+                    onChange={(e) => setBusinessUpi(e.target.value)}
+                  />
+
+                  <TextInput
+                    label="Contact Phone"
+                    placeholder="e.g. +91 98765 43210"
+                    value={businessPhone}
+                    onChange={(e) => setBusinessPhone(e.target.value)}
+                  />
+
+                  <TextInput
+                    label="Contact Email"
+                    placeholder="e.g. info@greenleaf.com"
+                    value={businessEmail}
+                    onChange={(e) => setBusinessEmail(e.target.value)}
+                  />
+
+                  <div className="md:col-span-2">
+                    <TextInput
+                      label="Business Address"
+                      placeholder="e.g. NH-48 Highway, Pune, Maharashtra - 411045"
+                      value={businessAddress}
+                      onChange={(e) => setBusinessAddress(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="border-t border-border pt-4 flex justify-end">
+                <Button
+                  type="submit"
+                  variant="primary"
+                  className="w-full md:w-auto px-8 font-bold"
+                  loading={settingsSaving}
+                  disabled={settingsSaving}
+                >
+                  Save Settings
+                </Button>
+              </div>
+            </form>
+          )}
+        </div>
+      )}
 
       {/* Salesperson Management (Owner Only) */}
       {isOwner && (
