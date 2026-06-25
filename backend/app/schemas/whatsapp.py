@@ -5,13 +5,13 @@ from typing import Literal
 from pydantic import BaseModel
 
 # What happened when we tried to send a bill on WhatsApp.
-#   sent_via_openwa — delivered through the shop's OpenWA session.
+#   sent_via_wati   — delivered through the Wati.io API.
 #   fallback_wa_me  — no gateway send; a click-to-chat link is the way forward.
 #   not_eligible    — no consenting, non-opted-out customer with a valid number.
 #   disabled        — WhatsApp globally disabled; use the wa.me link if present.
 #   failed          — unexpected problem; wa.me link offered when available.
 SendStatus = Literal[
-    "sent_via_openwa",
+    "sent_via_wati",
     "fallback_wa_me",
     "not_eligible",
     "disabled",

@@ -18,9 +18,9 @@ from app.models.bill import Bill, BillItem
 from app.models.customer import Customer
 from app.models.shop import Shop
 from app.schemas.whatsapp import SendWhatsAppResult
-from app.services.whatsapp.backends import OpenWAClient, WaMeLinkBuilder
+from app.services.whatsapp.backends import WatiClient, WaMeLinkBuilder
 from app.services.whatsapp.eligibility import is_whatsapp_eligible
-from app.services.whatsapp.formatter import BillLine, BillMessage, format_bill_message
+from app.services.whatsapp.formatter import BillLine, BillMessage, format_bill_message, compile_whatsapp_template
 from app.services.whatsapp.phone import normalize_indian_phone
 
 
@@ -99,7 +99,43 @@ async def send_bill_whatsapp(
     items = list(
         db.execute(select(BillItem).where(BillItem.bill_id == bill.id).order_by(BillItem.id.asc())).scalars()
     )
-    message = _build_message(bill, items, shop, customer)
+
+    # Construct the native public invoice sharing URL
+    invoice_url = f"{settings.FRONTEND_BASE_URL.rstrip('/')}/public/share/bill/{bill.id}"
+
+    # Compile the WhatsApp message: use custom template if configured
+    if shop is not None and shop.whatsapp_message_template:
+        bill_msg = BillMessage(
+            shop_name=shop.name if shop else None,
+            created_at=bill.created_at,
+            bill_type=bill.bill_type,
+            items=[
+                BillLine(
+                    name=it.product_name,
+                    quantity=it.quantity,
+                    unit_price=it.unit_price,
+                    line_total=it.line_total,
+                )
+                for it in items
+            ],
+            subtotal=bill.subtotal,
+            discount_type=bill.discount_type,
+            discount_value=bill.discount_value,
+            discount_amount=bill.discount_amount,
+            total=bill.total,
+            cash_amount=bill.cash_amount,
+            upi_amount=bill.upi_amount,
+            due_amount=bill.due_amount,
+            customer_name=customer.name if customer else None,
+            remarks=bill.remarks,
+            extra={"bill_id": str(bill.id)},
+        )
+        message = compile_whatsapp_template(shop.whatsapp_message_template, bill_msg, invoice_url)
+    else:
+        message = _build_message(bill, items, shop, customer)
+        if invoice_url:
+            message += f"\n\nDownload detailed PDF invoice here: {invoice_url}"
+
     wa_me_url = WaMeLinkBuilder.build(norm.wa_me, message)
 
     # Global kill switch → manual link only.
@@ -111,21 +147,20 @@ async def send_bill_whatsapp(
             detail="WhatsApp sending is turned off. Use the link to share manually.",
         )
 
-    # Try OpenWA only when configured AND this shop has a connected session.
-    if settings.WHATSAPP_DEFAULT_BACKEND == "openwa" and shop is not None and shop.openwa_session_id:
-        client = OpenWAClient(
-            settings.OPENWA_BASE_URL,
-            settings.OPENWA_API_KEY,
-            timeout=settings.OPENWA_TIMEOUT_SECONDS,
+    # Try Wati only when configured.
+    if settings.WHATSAPP_DEFAULT_BACKEND == "wati" and settings.WATI_API_KEY:
+        client = WatiClient(
+            settings.WATI_API_ENDPOINT,
+            settings.WATI_API_KEY,
+            timeout=settings.WATI_TIMEOUT_SECONDS,
         )
-        if await client.is_session_connected(shop.openwa_session_id):
-            if await client.send_text(shop.openwa_session_id, norm.chat_id, message):
-                _record(bill, "sent_via_openwa", sent=True)
-                return SendWhatsAppResult(
-                    status="sent_via_openwa",
-                    wa_me_url=None,
-                    detail="Sent on WhatsApp.",
-                )
+        if await client.send_text(norm.wa_me, message):
+            _record(bill, "sent_via_wati", sent=True)
+            return SendWhatsAppResult(
+                status="sent_via_wati",
+                wa_me_url=None,
+                detail="Sent on WhatsApp.",
+            )
 
     # Fallback: the wa.me link is always available for an eligible number.
     _record(bill, "fallback_wa_me", sent=False)

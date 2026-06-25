@@ -50,16 +50,20 @@ class Settings(BaseSettings):
     # ── WhatsApp delivery ────────────────────────────────────────────────────
     # Global kill switch. When false, sending always degrades to a wa.me link.
     WHATSAPP_ENABLED: bool = False
-    # OpenWA (self-hosted gateway) REST API base, e.g. http://localhost:2785/api.
-    OPENWA_BASE_URL: str = ""
-    # X-API-Key sent to OpenWA.
-    OPENWA_API_KEY: str = ""
-    # "openwa" → try OpenWA then fall back to wa.me; "wa_me" → force wa.me only.
-    WHATSAPP_DEFAULT_BACKEND: str = "openwa"
+    # Wati.io API endpoint, e.g. https://live-server-XXXXX.wati.io
+    WATI_API_ENDPOINT: str = ""
+    # Bearer access token sent to Wati.io.
+    WATI_API_KEY: str = ""
+    # "wati" → try Wati then fall back to wa.me; "wa_me" → force wa.me only.
+    WHATSAPP_DEFAULT_BACKEND: str = "wati"
     # Default country code used to normalize bare national numbers (India = 91).
     WHATSAPP_COUNTRY_CODE: str = "91"
-    # Per-request timeout (seconds) for OpenWA HTTP calls.
-    OPENWA_TIMEOUT_SECONDS: float = 8.0
+    # Per-request timeout (seconds) for Wati HTTP calls.
+    WATI_TIMEOUT_SECONDS: float = 8.0
+
+    # ── Frontend Link ────────────────────────────────────────────────────────
+    # Base URL of the frontend app, used to construct sharing URLs (e.g. wa.me and print links).
+    FRONTEND_BASE_URL: str = "http://localhost:5173"
 
     @property
     def cors_origins_list(self) -> list[str]:

@@ -116,3 +116,39 @@ def format_bill_message(bill: BillMessage) -> str:
     lines.append(f"Thank you for shopping with {shop}! 🌿")
 
     return "\n".join(lines)
+
+
+def compile_whatsapp_template(template_str: str, bill: BillMessage, invoice_ninja_url: str | None = None) -> str:
+    """Format a custom user template with bill values."""
+    # Build items string
+    item_lines = []
+    for it in bill.items:
+        item_lines.append(f"{it.name} ({it.quantity} × {_inr(it.unit_price)}) = {_inr(it.line_total)}")
+    items_str = "\n".join(item_lines)
+
+    cust_name = bill.customer_name or "Valued Customer"
+    shop = bill.shop_name or "Nursery"
+    bill_id = bill.extra.get("bill_id") or ""
+    # In case bill_id is a UUID, shorten it to 8 characters for clean display
+    if bill_id and "-" in bill_id:
+        bill_id = bill_id.split("-")[0].upper()
+
+    invoice_url = invoice_ninja_url or "Link not available"
+
+    replacements = {
+        "{{customer_name}}": cust_name,
+        "{{shop_name}}": shop,
+        "{{bill_total}}": _inr(bill.total),
+        "{{cash_amount}}": _inr(bill.cash_amount),
+        "{{upi_amount}}": _inr(bill.upi_amount),
+        "{{due_amount}}": _inr(bill.due_amount),
+        "{{bill_id}}": bill_id,
+        "{{items}}": items_str,
+        "{{invoice_url}}": invoice_url,
+        "{{invoice_ninja_url}}": invoice_url,
+    }
+
+    res = template_str
+    for placeholder, val in replacements.items():
+        res = res.replace(placeholder, val)
+    return res

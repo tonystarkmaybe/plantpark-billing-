@@ -225,6 +225,8 @@ def update_shop(
         shop.business_email = payload.business_email
     if payload.business_upi is not None:
         shop.business_upi = payload.business_upi
+    if payload.whatsapp_message_template is not None:
+        shop.whatsapp_message_template = payload.whatsapp_message_template
     db.flush()
     db.refresh(shop)
     return shop

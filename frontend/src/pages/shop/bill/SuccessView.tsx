@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import { Check, Printer } from "lucide-react";
-import type { BillOut } from "@/api/billing";
+import { type BillOut, sendBillWhatsApp } from "@/api/billing";
 import { Button } from "@/components/Button";
 import { formatINR, toPaise } from "@/lib/money";
 import { useBluetoothPrinter } from "@/store/bluetooth";
@@ -19,7 +19,26 @@ interface SuccessViewProps {
 export function SuccessView({ bill, onNewBill }: SuccessViewProps) {
   const reduce = useReducedMotion();
   const [printing, setPrinting] = useState(false);
+  const [sendingWa, setSendingWa] = useState(false);
   const { status } = useBluetoothPrinter();
+
+  const handleShareWhatsApp = async () => {
+    setSendingWa(true);
+    try {
+      const res = await sendBillWhatsApp(bill.id);
+      if (res.status === "sent_via_wati") {
+        alert("Receipt sent successfully via WhatsApp!");
+      } else if (res.wa_me_url) {
+        window.open(res.wa_me_url, "_blank");
+      } else {
+        alert(res.detail || "Unable to send WhatsApp message.");
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to share on WhatsApp.");
+    } finally {
+      setSendingWa(false);
+    }
+  };
 
   const handlePrint = async () => {
     setPrinting(true);
@@ -111,11 +130,14 @@ export function SuccessView({ bill, onNewBill }: SuccessViewProps) {
           <Printer className="h-5 w-5" />
           {status === "connected" ? "Print Receipt" : "Connect & Print"}
         </Button>
-        <Button variant="secondary" size="action" className="w-full" disabled>
+        <Button
+          variant="secondary"
+          size="action"
+          className="w-full font-bold flex items-center justify-center gap-2 border-2 bg-white"
+          loading={sendingWa}
+          onClick={handleShareWhatsApp}
+        >
           Share on WhatsApp
-          <span className="ml-2 rounded-full bg-surface-muted px-2 py-0.5 text-sm font-semibold text-ink-soft">
-            Soon
-          </span>
         </Button>
       </div>
     </div>

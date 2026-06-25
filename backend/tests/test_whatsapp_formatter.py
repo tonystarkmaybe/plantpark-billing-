@@ -4,7 +4,7 @@ from __future__ import annotations
 import datetime as dt
 from decimal import Decimal
 
-from app.services.whatsapp.formatter import BillLine, BillMessage, format_bill_message
+from app.services.whatsapp.formatter import BillLine, BillMessage, format_bill_message, compile_whatsapp_template
 
 # A fixed instant: 2026-06-13 17:28 UTC == 2026-06-13 10:58 PM IST.
 WHEN = dt.datetime(2026, 6, 13, 17, 28, tzinfo=dt.timezone.utc)
@@ -152,4 +152,41 @@ def test_remarks_formatting():
         )
     )
     assert "Remarks: Deliver on Monday" in msg
+
+
+def test_compile_whatsapp_template():
+    bill = BillMessage(
+        shop_name="Nursery",
+        created_at=dt.datetime.now(dt.timezone.utc),
+        bill_type="retail",
+        items=[
+            BillLine(
+                name="Rose",
+                quantity=2,
+                unit_price=Decimal("100.00"),
+                line_total=Decimal("200.00"),
+            )
+        ],
+        subtotal=Decimal("200.00"),
+        discount_type="flat",
+        discount_value=Decimal("10.00"),
+        discount_amount=Decimal("10.00"),
+        total=Decimal("190.00"),
+        cash_amount=Decimal("190.00"),
+        upi_amount=Decimal("0.00"),
+        due_amount=Decimal("0.00"),
+        customer_name="John Doe",
+        remarks="Test remark",
+        extra={"bill_id": "test-bill-id-12345"},
+    )
+
+    template = "Hey {{customer_name}}, thank you for shopping at {{shop_name}}. Total is {{bill_total}}. Invoice: {{invoice_ninja_url}}. Items: {{items}}."
+    res = compile_whatsapp_template(template, bill, "https://invoice/ninja/pdf")
+
+    assert "Hey John Doe" in res
+    assert "at Nursery" in res
+    assert "Total is ₹190.00" in res
+    assert "Invoice: https://invoice/ninja/pdf" in res
+    assert "Items: Rose (2 × ₹100.00) = ₹200.00" in res
+
 

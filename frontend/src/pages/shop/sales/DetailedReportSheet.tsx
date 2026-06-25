@@ -534,11 +534,11 @@ export function DetailedReportSheet({ open, onClose, staffList, currentUserEmail
               {waResult && (
                 <div className={[
                   "rounded-control px-3 py-2 text-sm font-semibold flex items-start gap-2",
-                  waResult.status === "sent_via_openwa"
+                  waResult.status === "sent_via_wati"
                     ? "bg-emerald-50 text-emerald-800"
                     : "bg-amber-50 text-amber-800"
                 ].join(" ")}>
-                  {waResult.status === "sent_via_openwa" ? (
+                  {waResult.status === "sent_via_wati" ? (
                     <CheckCircle className="h-5 w-5 shrink-0 text-emerald-600" />
                   ) : (
                     <AlertCircle className="h-5 w-5 shrink-0 text-amber-600" />

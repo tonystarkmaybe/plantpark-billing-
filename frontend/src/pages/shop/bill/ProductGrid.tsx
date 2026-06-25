@@ -11,9 +11,11 @@ interface ProductGridProps {
   /** quantity currently in the cart, keyed by product id (for the badge). */
   cartQty: Record<string, number>;
   onPick: (p: Product) => void;
+  onOpenScanner?: () => void;
+  onOpenQuickAdd?: () => void;
 }
 
-export function ProductGrid({ products }: ProductGridProps) {
+export function ProductGrid({ products, onOpenScanner, onOpenQuickAdd }: ProductGridProps) {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<string | null>(null);
 
@@ -41,28 +43,54 @@ export function ProductGrid({ products }: ProductGridProps) {
 
   return (
     <div className="space-y-4">
-      {/* Search Input Container */}
-      <div className="relative">
-        <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-ink-soft">
-          <Search className="h-5 w-5" />
-        </span>
-        <input
-          type="search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search by item name, SKU ID or category"
-          className="field pl-10 pr-12"
-          aria-label="Search products"
-        />
-        <div className="absolute inset-y-0 right-0 flex items-center pr-2">
-          <VoiceSearchButton
-            candidates={candidates}
-            onTranscript={(text) => {
-              setQuery(text);
-              setCategory(null);
-            }}
+      {/* Search & Actions Container */}
+      <div className="flex gap-3 items-center">
+        <div className="relative flex-1">
+          <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-ink-soft">
+            <Search className="h-5 w-5" />
+          </span>
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search by item name, SKU ID or category"
+            className="field pl-10 pr-12"
+            aria-label="Search products"
           />
+          <div className="absolute inset-y-0 right-0 flex items-center pr-2">
+            <VoiceSearchButton
+              candidates={candidates}
+              onTranscript={(text) => {
+                setQuery(text);
+                setCategory(null);
+              }}
+            />
+          </div>
         </div>
+
+        {/* Tablet/Desktop shortcuts for Scanner and Quick Add */}
+        {onOpenScanner && (
+          <button
+            type="button"
+            onClick={onOpenScanner}
+            className="hidden lg:flex h-11 px-4 items-center gap-2 rounded-xl border border-border bg-white font-bold text-ink hover:bg-slate-50 active:scale-95 shrink-0 transition-all text-sm"
+            title="Scan barcode"
+          >
+            <Search className="h-4 w-4 text-ink-soft" />
+            <span>Scan Barcode</span>
+          </button>
+        )}
+        {onOpenQuickAdd && (
+          <button
+            type="button"
+            onClick={onOpenQuickAdd}
+            className="hidden lg:flex h-11 px-4 items-center gap-2 rounded-xl border border-border bg-white font-bold text-ink hover:bg-slate-50 active:scale-95 shrink-0 transition-all text-sm"
+            title="Quick add custom product"
+          >
+            <Plus className="h-4 w-4 text-ink-soft" />
+            <span>Quick Add</span>
+          </button>
+        )}
       </div>
 
       {/* Category Tabs */}
@@ -87,7 +115,7 @@ export function ProductGrid({ products }: ProductGridProps) {
             : "No products match your search."}
         </p>
       ) : (
-        <div className="flex flex-col gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {filtered.map((p) => {
             const line = lines.find((l) => l.product_id === p.id);
             const qty = line?.quantity ?? 0;

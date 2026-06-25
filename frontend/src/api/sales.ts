@@ -184,7 +184,7 @@ export interface SendReportWhatsAppPayload {
 }
 
 export interface SendWhatsAppResult {
-  status: "sent_via_openwa" | "fallback_wa_me" | "disabled" | "not_eligible";
+  status: "sent_via_wati" | "fallback_wa_me" | "disabled" | "not_eligible";
   wa_me_url: string | null;
   detail: string;
 }

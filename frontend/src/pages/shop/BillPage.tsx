@@ -20,6 +20,7 @@ import { CartSheet } from "./bill/CartSheet";
 import { SuccessView } from "./bill/SuccessView";
 import { QuickAddSheet } from "./bill/QuickAddSheet";
 import { ScannerSheet } from "./bill/ScannerSheet";
+import { CartForm } from "./bill/CartForm";
 
 export function BillPage() {
   const user = useAuth((s) => s.user);
@@ -140,7 +141,7 @@ export function BillPage() {
   }
 
   return (
-    <div>
+    <div className="w-full">
       {loading ? (
         <div className="flex justify-center py-16">
           <Spinner className="h-8 w-8 text-primary-600" />
@@ -158,16 +159,42 @@ export function BillPage() {
           </Button>
         </div>
       ) : (
-        <ProductGrid products={products} cartQty={cartQty} onPick={addUnit} />
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          {/* Products Column */}
+          <div className="lg:col-span-7 xl:col-span-8">
+            <ProductGrid
+              products={products}
+              cartQty={cartQty}
+              onPick={addUnit}
+              onOpenScanner={() => setScannerOpen(true)}
+              onOpenQuickAdd={() => setQuickAddOpen(true)}
+            />
+          </div>
+
+          {/* Sticky Tablet Checkout Column */}
+          <div className="hidden lg:block lg:col-span-5 xl:col-span-4 sticky top-6 bg-white border border-border rounded-2xl p-5 shadow-sm max-h-[80vh] overflow-y-auto">
+            <h2 className="text-xl font-bold text-ink mb-4">Checkout Summary</h2>
+            <CartForm
+              totals={totals}
+              onCheckout={handleCheckout}
+              saving={saving}
+              errorMsg={saveError}
+              inline
+            />
+          </div>
+        </div>
       )}
 
-      <CartBar
-        itemCount={itemCount}
-        totalPaise={totals.totalPaise}
-        onOpenCheckout={() => setCartOpen(true)}
-        onOpenQuickAdd={() => setQuickAddOpen(true)}
-        onOpenScanner={() => setScannerOpen(true)}
-      />
+      {/* Cart bar is hidden on tablet/large screen, visible on mobile */}
+      <div className="lg:hidden">
+        <CartBar
+          itemCount={itemCount}
+          totalPaise={totals.totalPaise}
+          onOpenCheckout={() => setCartOpen(true)}
+          onOpenQuickAdd={() => setQuickAddOpen(true)}
+          onOpenScanner={() => setScannerOpen(true)}
+        />
+      </div>
 
       <CartSheet
         open={cartOpen}

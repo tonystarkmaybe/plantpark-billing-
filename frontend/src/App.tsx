@@ -15,6 +15,7 @@ import { ShopsPage } from "@/pages/admin/ShopsPage";
 import { CustomersPage } from "@/pages/admin/CustomersPage";
 import { CustomersPage as ShopCustomersPage } from "@/pages/shop/CustomersPage";
 import { SalesPage as AdminSalesPage } from "@/pages/admin/SalesPage";
+import { PublicBillReceiptPage } from "@/pages/shop/PublicBillReceiptPage";
 
 /** Sends an already-authenticated user away from /login to their role home. */
 function RootRedirect() {
@@ -43,6 +44,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<RootRedirect />} />
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/public/share/bill/:billId" element={<PublicBillReceiptPage />} />
 
         {/* Dev-only design system reference (not linked in nav). */}
         {import.meta.env.DEV && <Route path="/_styleguide" element={<StyleGuide />} />}

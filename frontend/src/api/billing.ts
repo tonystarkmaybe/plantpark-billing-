@@ -1,5 +1,6 @@
 import { api } from "./client";
 import type { Product } from "./types";
+import type { SendWhatsAppResult } from "./sales";
 
 export async function fetchProducts(): Promise<Product[]> {
   // Active products only (default). Filtering/search is done client-side for snappy UX.
@@ -64,5 +65,15 @@ export interface BillOut {
 
 export async function createBill(payload: BillCreatePayload): Promise<BillOut> {
   const { data } = await api.post<BillOut>("/bills", payload);
+  return data;
+}
+
+export async function sendBillWhatsApp(billId: string): Promise<SendWhatsAppResult> {
+  const { data } = await api.post<SendWhatsAppResult>(`/bills/${billId}/send-whatsapp`);
+  return data;
+}
+
+export async function fetchPublicBill(billId: string): Promise<BillOut> {
+  const { data } = await api.get<BillOut>(`/bills/public/${billId}`);
   return data;
 }

@@ -14,6 +14,7 @@ export interface ShopRow {
   business_phone?: string | null;
   business_email?: string | null;
   business_upi?: string | null;
+  whatsapp_message_template?: string | null;
 }
 
 export interface OwnerInfo {
@@ -80,6 +81,7 @@ export async function updateShop(
     business_phone?: string | null;
     business_email?: string | null;
     business_upi?: string | null;
+    whatsapp_message_template?: string | null;
   }
 ): Promise<void> {
   await api.patch(`/admin/shops/${shopId}`, payload);

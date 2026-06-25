@@ -23,6 +23,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_db, require_shop_owner, require_shop_or_admin, require_shop_owner_only, require_shop_owner_or_admin, require_admin
+from app.database import privileged_session
 from app.config import get_settings
 from app.models.bill import Bill, BillItem
 from app.models.customer import Customer
@@ -48,7 +49,7 @@ from app.schemas.report import (
 )
 from app.services.whatsapp.eligibility import apply_phone_consent
 from app.services.whatsapp.service import send_bill_whatsapp
-from app.services.whatsapp.backends import OpenWAClient, WaMeLinkBuilder
+from app.services.whatsapp.backends import WatiClient, WaMeLinkBuilder
 from app.services.whatsapp.phone import normalize_indian_phone
 
 router = APIRouter(prefix="/bills", tags=["bills"])
@@ -932,23 +933,87 @@ async def send_report_whatsapp(
             detail="WhatsApp sending is turned off. Use the link to share manually.",
         )
 
-    if settings.WHATSAPP_DEFAULT_BACKEND == "openwa" and shop is not None and shop.openwa_session_id:
-        client = OpenWAClient(
-            settings.OPENWA_BASE_URL,
-            settings.OPENWA_API_KEY,
-            timeout=settings.OPENWA_TIMEOUT_SECONDS,
+    if settings.WHATSAPP_DEFAULT_BACKEND == "wati" and settings.WATI_API_KEY:
+        client = WatiClient(
+            settings.WATI_API_ENDPOINT,
+            settings.WATI_API_KEY,
+            timeout=settings.WATI_TIMEOUT_SECONDS,
         )
-        if await client.is_session_connected(shop.openwa_session_id):
-            if await client.send_text(shop.openwa_session_id, norm.chat_id, message):
-                return SendWhatsAppResult(
-                    status="sent_via_openwa",
-                    wa_me_url=None,
-                    detail="Report sent on WhatsApp.",
-                )
+        if await client.send_text(norm.wa_me, message):
+            return SendWhatsAppResult(
+                status="sent_via_wati",
+                wa_me_url=None,
+                detail="Report sent on WhatsApp.",
+            )
 
     return SendWhatsAppResult(
         status="fallback_wa_me",
         wa_me_url=wa_me_url,
         detail="Tap to send this report on WhatsApp.",
     )
+
+
+@router.get("/public/{bill_id}", response_model=BillDetailOut)
+def get_public_bill(
+    bill_id: uuid.UUID,
+) -> BillDetailOut:
+    """Public endpoint to view a bill receipt using its secure UUID capability token."""
+    with privileged_session() as db:
+        bill = db.execute(select(Bill).where(Bill.id == bill_id)).scalar_one_or_none()
+        if bill is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bill not found")
+
+        items = list(
+            db.execute(
+                select(BillItem).where(BillItem.bill_id == bill.id).order_by(BillItem.id.asc())
+            ).scalars()
+        )
+
+        customer_name: str | None = None
+        customer_phone: str | None = None
+        if bill.customer_id is not None:
+            c = db.execute(
+                select(Customer).where(Customer.id == bill.customer_id)
+            ).scalar_one_or_none()
+            if c is not None:
+                customer_name, customer_phone = c.name, c.phone
+
+        shop = db.execute(select(Shop).where(Shop.id == bill.shop_id)).scalar_one_or_none()
+        creator_email = _user_email(db, bill.created_by)
+
+        return BillDetailOut(
+            id=bill.id,
+            shop_name=shop.name if shop else None,
+            business_name=(shop.business_name or shop.name) if shop else None,
+            business_address=shop.business_address if shop else None,
+            business_phone=shop.business_phone if shop else None,
+            bill_type=bill.bill_type,
+            subtotal=bill.subtotal,
+            discount_type=bill.discount_type,
+            discount_value=bill.discount_value,
+            discount_amount=bill.discount_amount,
+            total=bill.total,
+            cash_amount=bill.cash_amount,
+            upi_amount=bill.upi_amount,
+            due_amount=bill.due_amount,
+            payment_method=_payment_method(bill.cash_amount, bill.upi_amount, bill.due_amount),
+            customer_id=bill.customer_id,
+            customer_name=customer_name,
+            customer_phone=customer_phone,
+            salesperson_email=creator_email,
+            remarks=bill.remarks,
+            is_edited=bill.is_edited,
+            created_at=bill.created_at,
+            items=[
+                BillItemOut(
+                    product_id=it.product_id,
+                    product_name=it.product_name,
+                    unit_price=it.unit_price,
+                    quantity=it.quantity,
+                    line_total=it.line_total,
+                )
+                for it in items
+            ],
+        )
+
 

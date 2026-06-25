@@ -14,7 +14,7 @@ export function ShopLayout() {
     <div className="flex min-h-dvh flex-col bg-surface-muted">
       <TopAppBar />
 
-      <main className="mx-auto w-full max-w-screen-sm flex-1 px-4 pb-28 pt-4">
+      <main className="mx-auto w-full max-w-screen-sm md:max-w-screen-md lg:max-w-screen-lg xl:max-w-screen-xl flex-1 px-4 pb-28 pt-4">
         {/* Subtle cross-fade/slide on route change. Respects reduced-motion via CSS. */}
         <AnimatePresence mode="wait">
           <motion.div

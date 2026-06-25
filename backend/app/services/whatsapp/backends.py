@@ -28,60 +28,62 @@ class WaMeLinkBuilder:
         return f"https://wa.me/{wa_me_number}?text={quote(text)}"
 
 
-class OpenWAClient:
-    """Thin async client for an existing OpenWA session.
+class WatiClient:
+    """Thin async client for Wati.io API.
 
-    Only consumes a session here (status check + send text). Session creation /
-    QR pairing is the admin flow in prompt 10B. The base URL already includes
-    the '/api' path (e.g. http://localhost:2785/api).
+    Consumes Wati Bearer token inside HTTP Header (Authorization: Bearer <token>)
+    and calls Wati.io API: POST {base_url}/api/v1/sendSessionMessage/{whatsappNumber}.
     """
 
-    def __init__(self, base_url: str, api_key: str, *, timeout: float = 8.0) -> None:
-        self._base = base_url.rstrip("/")
-        self._headers = {"X-API-Key": api_key}
+    def __init__(self, endpoint: str, api_key: str, *, timeout: float = 8.0) -> None:
+        self._endpoint = endpoint.rstrip("/")
+        self._headers = {
+            "Authorization": f"Bearer {api_key}",
+        }
         self._timeout = timeout
 
-    async def is_session_connected(self, session_id: str) -> bool:
-        """True only if the gateway confirms this session is connected.
+    async def send_text(self, phone_number: str, text: str) -> bool:
+        """Send a text message via Wati's sendSessionMessage API.
 
-        Any error (unreachable, timeout, non-2xx, unexpected body) → False, so
-        the caller falls back to wa.me.
+        Returns True on a 2xx and successful response body, False on any failure.
         """
-        if not self._base or not session_id:
+        if not self._endpoint or not phone_number:
+            logger.warning("Wati.io send_text skipped: endpoint or phone_number is missing")
             return False
-        url = f"{self._base}/sessions/{session_id}/status"
-        try:
-            async with httpx.AsyncClient(timeout=self._timeout) as client:
-                resp = await client.get(url, headers=self._headers)
-            if resp.status_code != 200:
-                return False
-            data = resp.json()
-        except (httpx.HTTPError, ValueError) as exc:  # network or JSON errors
-            logger.warning("OpenWA status check failed for %s: %s", session_id, exc)
-            return False
-        # Be lenient about the gateway's status shape.
-        if isinstance(data, dict):
-            if data.get("connected") is True:
-                return True
-            state = str(data.get("status") or data.get("state") or "").lower()
-            return state in {"connected", "online", "ready", "authenticated"}
-        return False
 
-    async def send_text(self, session_id: str, chat_id: str, text: str) -> bool:
-        """Send a text message. Returns True on a 2xx, False on any failure."""
-        if not self._base or not session_id:
-            return False
-        url = f"{self._base}/sessions/{session_id}/messages/send-text"
-        payload = {"chatId": chat_id, "text": text}
+        # Clean phone number (strip leading '+' if any)
+        clean_phone = phone_number.lstrip("+")
+
+        # WATI endpoint format: POST {URL}/api/v1/sendSessionMessage/{whatsappNumber}
+        base = self._endpoint
+        if "/api/v1" in base:
+            base = base.split("/api/v1")[0]
+
+        url = f"{base}/api/v1/sendSessionMessage/{clean_phone}"
+        payload = {"messageText": text}
+
         try:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
-                resp = await client.post(url, headers=self._headers, json=payload)
+                resp = await client.post(url, headers=self._headers, data=payload)
+
             if 200 <= resp.status_code < 300:
+                try:
+                    data = resp.json()
+                    if isinstance(data, dict):
+                        res = data.get("result")
+                        if res is False or str(res).lower() == "false":
+                            logger.warning("Wati API returned failure result: %s", data)
+                            return False
+                        return True
+                except (ValueError, KeyError):
+                    pass
                 return True
+
             logger.warning(
-                "OpenWA send failed (%s) for %s -> %s", resp.status_code, session_id, chat_id
+                "Wati send failed with HTTP status %s -> %s", resp.status_code, clean_phone
             )
             return False
         except httpx.HTTPError as exc:
-            logger.warning("OpenWA send errored for %s -> %s: %s", session_id, chat_id, exc)
+            logger.warning("Wati send errored -> %s: %s", clean_phone, exc)
             return False
+

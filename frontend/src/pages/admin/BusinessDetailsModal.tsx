@@ -16,6 +16,7 @@ export function BusinessDetailsModal({ shop, onClose, onSaved }: BusinessDetails
   const [businessPhone, setBusinessPhone] = useState("");
   const [businessEmail, setBusinessEmail] = useState("");
   const [businessUpi, setBusinessUpi] = useState("");
+  const [whatsappMessageTemplate, setWhatsappMessageTemplate] = useState("");
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -27,6 +28,7 @@ export function BusinessDetailsModal({ shop, onClose, onSaved }: BusinessDetails
     setBusinessPhone(shop.business_phone || "");
     setBusinessEmail(shop.business_email || "");
     setBusinessUpi(shop.business_upi || "");
+    setWhatsappMessageTemplate(shop.whatsapp_message_template || "");
     setError(null);
     setSubmitting(false);
   }, [shop]);
@@ -50,6 +52,7 @@ export function BusinessDetailsModal({ shop, onClose, onSaved }: BusinessDetails
         business_phone: businessPhone.trim() || null,
         business_email: businessEmail.trim() || null,
         business_upi: trimmedUpi || null,
+        whatsapp_message_template: whatsappMessageTemplate.trim() || null,
       });
       onSaved();
       onClose();
@@ -133,6 +136,21 @@ export function BusinessDetailsModal({ shop, onClose, onSaved }: BusinessDetails
             value={businessUpi}
             onChange={(e) => setBusinessUpi(e.target.value)}
             placeholder="merchant@ybl"
+          />
+        </div>
+
+        <div>
+          <label className="mb-1 block text-sm font-semibold text-ink">Custom WhatsApp Message Template</label>
+          <p className="mb-1.5 text-xs text-ink-soft leading-normal">
+            Define your custom receipt message. You can use these dynamic placeholders:
+            <br />
+            <code>{"{{customer_name}}"}</code>, <code>{"{{shop_name}}"}</code>, <code>{"{{bill_total}}"}</code>, <code>{"{{items}}"}</code>, <code>{"{{cash_amount}}"}</code>, <code>{"{{upi_amount}}"}</code>, <code>{"{{due_amount}}"}</code>, <code>{"{{bill_id}}"}</code>, <code>{"{{invoice_ninja_url}}"}</code>
+          </p>
+          <textarea
+            className="w-full rounded-control border-2 border-border bg-white px-3 py-2 text-base text-ink focus:border-primary-600 focus:outline-none focus:ring-4 focus:ring-primary-600/20 min-h-[7rem] font-mono text-sm"
+            value={whatsappMessageTemplate}
+            onChange={(e) => setWhatsappMessageTemplate(e.target.value)}
+            placeholder="Hello {{customer_name}}, here is your bill of {{bill_total}} from {{shop_name}}. Items: {{items}}. Invoice link: {{invoice_ninja_url}}"
           />
         </div>
       </div>

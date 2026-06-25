@@ -40,6 +40,7 @@ class ShopSummary(BaseModel):
     business_phone: str | None = None
     business_email: str | None = None
     business_upi: str | None = None
+    whatsapp_message_template: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -65,6 +66,7 @@ class ShopListRow(BaseModel):
     business_phone: str | None = None
     business_email: str | None = None
     business_upi: str | None = None
+    whatsapp_message_template: str | None = None
 
 
 class ShopUpdateRequest(BaseModel):
@@ -75,6 +77,7 @@ class ShopUpdateRequest(BaseModel):
     business_phone: str | None = None
     business_email: str | None = None
     business_upi: str | None = None
+    whatsapp_message_template: str | None = None
 
     @field_validator("business_upi")
     @classmethod

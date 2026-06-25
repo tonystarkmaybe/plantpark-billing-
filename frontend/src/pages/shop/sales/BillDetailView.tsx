@@ -3,6 +3,7 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { ChevronLeft, Printer } from "lucide-react";
 import { useBluetoothPrinter } from "@/store/bluetooth";
 import { fetchBillDetail, deleteBill, type BillDetail } from "@/api/sales";
+import { sendBillWhatsApp } from "@/api/billing";
 import { friendlyError } from "@/api/client";
 import { Spinner } from "@/components/Spinner";
 import { Button } from "@/components/Button";
@@ -26,7 +27,27 @@ export function BillDetailView({ billId, onClose, onUpdated }: BillDetailViewPro
   const reduce = useReducedMotion();
   const [bill, setBill] = useState<BillDetail | null>(null);
   const [printing, setPrinting] = useState(false);
+  const [sendingWa, setSendingWa] = useState(false);
   const { status } = useBluetoothPrinter();
+
+  const handleShareWhatsApp = async () => {
+    if (!bill) return;
+    setSendingWa(true);
+    try {
+      const res = await sendBillWhatsApp(bill.id);
+      if (res.status === "sent_via_wati") {
+        alert("Receipt sent successfully via WhatsApp!");
+      } else if (res.wa_me_url) {
+        window.open(res.wa_me_url, "_blank");
+      } else {
+        alert(res.detail || "Unable to send WhatsApp message.");
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to share on WhatsApp.");
+    } finally {
+      setSendingWa(false);
+    }
+  };
 
   const handlePrint = async () => {
     if (!bill) return;
@@ -208,11 +229,14 @@ export function BillDetailView({ billId, onClose, onUpdated }: BillDetailViewPro
                     <Printer className="h-5 w-5" />
                     {status === "connected" ? "Print" : "Connect & Print"}
                   </Button>
-                  <Button variant="secondary" size="action" disabled>
+                  <Button
+                    variant="secondary"
+                    size="action"
+                    className="font-bold flex items-center justify-center gap-2 border-2 bg-white"
+                    loading={sendingWa}
+                    onClick={handleShareWhatsApp}
+                  >
                     WhatsApp
-                    <span className="ml-1 rounded-full bg-surface-muted px-2 py-0.5 text-sm font-semibold text-ink-soft">
-                      Soon
-                    </span>
                   </Button>
                 </div>
               </div>
