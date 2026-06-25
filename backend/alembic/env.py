@@ -20,7 +20,10 @@ if config.config_file_name is not None:
 
 settings = get_settings()
 # Always migrate using the privileged owner connection.
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL_ADMIN)
+# Escape % to %% because Alembic's configparser uses % for interpolation
+escaped_url = settings.DATABASE_URL_ADMIN.replace("%", "%%")
+config.set_main_option("sqlalchemy.url", escaped_url)
+
 
 target_metadata = Base.metadata
 
