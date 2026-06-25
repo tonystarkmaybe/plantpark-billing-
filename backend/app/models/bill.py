@@ -61,6 +61,14 @@ class Bill(Base):
     whatsapp_sent_at: Mapped[dt.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    invoice_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    whatsapp_status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'none'"))
+    whatsapp_message_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    whatsapp_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    retry_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    last_retry_at: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     remarks: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_edited: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("false")

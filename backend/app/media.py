@@ -23,6 +23,7 @@ IMAGE_CONTENT_TYPES: dict[str, str] = {
 MAX_IMAGE_BYTES = 5 * 1024 * 1024  # 5 MB
 
 _PRODUCTS_SUBDIR = "products"
+_INVOICES_SUBDIR = "invoices"
 
 
 def media_root() -> Path:
@@ -33,9 +34,14 @@ def products_dir() -> Path:
     return media_root() / _PRODUCTS_SUBDIR
 
 
+def invoices_dir() -> Path:
+    return media_root() / _INVOICES_SUBDIR
+
+
 def ensure_media_dirs() -> None:
-    """Create MEDIA_ROOT and MEDIA_ROOT/products if missing. Idempotent."""
+    """Create MEDIA_ROOT, products, and invoices subdirectories if missing."""
     products_dir().mkdir(parents=True, exist_ok=True)
+    invoices_dir().mkdir(parents=True, exist_ok=True)
 
 
 def save_product_image_bytes(data: bytes, ext: str) -> str:

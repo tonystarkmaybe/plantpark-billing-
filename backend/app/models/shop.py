@@ -55,3 +55,45 @@ class Shop(Base):
             new_settings["whatsapp_message_template"] = value.strip()
         self.settings = new_settings
 
+    @property
+    def whatsapp_enable_pdf(self) -> bool:
+        return self.settings.get("whatsapp_enable_pdf", True)
+
+    @whatsapp_enable_pdf.setter
+    def whatsapp_enable_pdf(self, value: bool) -> None:
+        if self.settings is None:
+            self.settings = {}
+        new_settings = dict(self.settings)
+        new_settings["whatsapp_enable_pdf"] = value
+        self.settings = new_settings
+
+    @property
+    def whatsapp_footer_message(self) -> str | None:
+        return self.settings.get("whatsapp_footer_message", None)
+
+    @whatsapp_footer_message.setter
+    def whatsapp_footer_message(self, value: str | None) -> None:
+        if self.settings is None:
+            self.settings = {}
+        new_settings = dict(self.settings)
+        if value is None:
+            new_settings.pop("whatsapp_footer_message", None)
+        else:
+            new_settings["whatsapp_footer_message"] = value.strip()
+        self.settings = new_settings
+
+    @property
+    def whatsapp_language(self) -> str:
+        return self.settings.get("whatsapp_language", "en")
+
+    @whatsapp_language.setter
+    def whatsapp_language(self, value: str | None) -> None:
+        if self.settings is None:
+            self.settings = {}
+        new_settings = dict(self.settings)
+        if value is None:
+            new_settings.pop("whatsapp_language", None)
+        else:
+            new_settings["whatsapp_language"] = value.strip()
+        self.settings = new_settings
+

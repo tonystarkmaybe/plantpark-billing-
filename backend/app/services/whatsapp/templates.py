@@ -1,9 +1,4 @@
-"""Bill → WhatsApp message formatter.
-
-Pure functions over plain data (no DB, no network) so this is trivially unit
-tested. The output reads like a real shop receipt — not a marketing blast — and
-is used verbatim by both the wa.me link (URL-encoded) and the OpenWA send body.
-"""
+"""Receipt formatting and custom text template compilation for WhatsApp messages."""
 from __future__ import annotations
 
 import datetime as dt
@@ -43,7 +38,7 @@ class BillMessage:
 
 
 def _inr(amount: Decimal) -> str:
-    """Format money with Indian digit grouping, e.g. ₹1,23,456.00."""
+    """Format money with Indian digit grouping, e.g. Rs. 1,23,456.00."""
     q = amount.quantize(Decimal("0.01"))
     negative = q < 0
     s = f"{abs(q):.2f}"
@@ -51,10 +46,9 @@ def _inr(amount: Decimal) -> str:
     if len(intpart) > 3:
         last3 = intpart[-3:]
         rest = intpart[:-3]
-        # Insert a comma every two digits in the remaining (left) portion.
         rest = re.sub(r"(\d)(?=(\d\d)+$)", r"\1,", rest)
         intpart = f"{rest},{last3}"
-    return f"{'-' if negative else ''}₹{intpart}.{dec}"
+    return f"{'-' if negative else ''}Rs. {intpart}.{dec}"
 
 
 def _payment_line(cash: Decimal, upi: Decimal, due: Decimal) -> str:
@@ -99,7 +93,6 @@ def format_bill_message(bill: BillMessage) -> str:
     lines.append(f"Subtotal: {_inr(bill.subtotal)}")
     if bill.discount_amount > 0:
         if bill.discount_type == "percent":
-            # Trim a trailing ".00" from whole-number percentages for readability.
             pct = bill.discount_value.normalize()
             pct_str = format(pct, "f")
             lines.append(f"Discount ({pct_str}%): -{_inr(bill.discount_amount)}")
@@ -118,9 +111,8 @@ def format_bill_message(bill: BillMessage) -> str:
     return "\n".join(lines)
 
 
-def compile_whatsapp_template(template_str: str, bill: BillMessage, invoice_ninja_url: str | None = None) -> str:
+def compile_whatsapp_template(template_str: str, bill: BillMessage, invoice_url_str: str | None = None) -> str:
     """Format a custom user template with bill values."""
-    # Build items string
     item_lines = []
     for it in bill.items:
         item_lines.append(f"{it.name} ({it.quantity} × {_inr(it.unit_price)}) = {_inr(it.line_total)}")
@@ -129,11 +121,10 @@ def compile_whatsapp_template(template_str: str, bill: BillMessage, invoice_ninj
     cust_name = bill.customer_name or "Valued Customer"
     shop = bill.shop_name or "Nursery"
     bill_id = bill.extra.get("bill_id") or ""
-    # In case bill_id is a UUID, shorten it to 8 characters for clean display
     if bill_id and "-" in bill_id:
         bill_id = bill_id.split("-")[0].upper()
 
-    invoice_url = invoice_ninja_url or "Link not available"
+    invoice_url = invoice_url_str or "Link not available"
 
     replacements = {
         "{{customer_name}}": cust_name,

@@ -4,7 +4,7 @@ from __future__ import annotations
 import datetime as dt
 from decimal import Decimal
 
-from app.services.whatsapp.formatter import BillLine, BillMessage, format_bill_message, compile_whatsapp_template
+from app.services.whatsapp.templates import BillLine, BillMessage, format_bill_message, compile_whatsapp_template
 
 # A fixed instant: 2026-06-13 17:28 UTC == 2026-06-13 10:58 PM IST.
 WHEN = dt.datetime(2026, 6, 13, 17, 28, tzinfo=dt.timezone.utc)
@@ -35,11 +35,11 @@ def test_retail_cash_no_discount():
     assert "Hello Sita, here's your bill." in msg
     assert "13 Jun 2026, 10:58 PM" in msg
     assert "Money Plant" in msg
-    assert "₹120.00 × 2 = ₹240.00" in msg
-    assert "Subtotal: ₹240.00" in msg
+    assert "Rs. 120.00 × 2 = Rs. 240.00" in msg
+    assert "Subtotal: Rs. 240.00" in msg
     assert "Discount" not in msg  # no discount line when zero
-    assert "Total: ₹240.00" in msg
-    assert "Paid: Cash ₹240.00" in msg
+    assert "Total: Rs. 240.00" in msg
+    assert "Paid: Cash Rs. 240.00" in msg
     assert "Thank you for shopping with Green Leaf Nursery!" in msg
 
 
@@ -60,9 +60,9 @@ def test_percent_discount_and_split_payment():
             customer_name="Sita",
         )
     )
-    assert "Discount (10%): -₹24.00" in msg
-    assert "Total: ₹216.00" in msg
-    assert "Paid: Cash ₹100.00 + UPI ₹116.00 (Split)" in msg
+    assert "Discount (10%): -Rs. 24.00" in msg
+    assert "Total: Rs. 216.00" in msg
+    assert "Paid: Cash Rs. 100.00 + UPI Rs. 116.00 (Split)" in msg
 
 
 def test_wholesale_upi_only_and_indian_grouping_no_customer():
@@ -84,9 +84,9 @@ def test_wholesale_upi_only_and_indian_grouping_no_customer():
     )
     assert "(Wholesale)" in msg
     assert "Here's your bill." in msg  # generic greeting without a name
-    assert "Discount: -₹500.00" in msg
-    assert "Total: ₹22,000.00" in msg  # Indian digit grouping
-    assert "Paid: UPI ₹22,000.00" in msg
+    assert "Discount: -Rs. 500.00" in msg
+    assert "Total: Rs. 22,000.00" in msg  # Indian digit grouping
+    assert "Paid: UPI Rs. 22,000.00" in msg
 
 
 def test_due_payment_formatting():
@@ -107,8 +107,8 @@ def test_due_payment_formatting():
             customer_name="Sita",
         )
     )
-    assert "Total: ₹240.00" in msg
-    assert "Payment: Due ₹240.00" in msg
+    assert "Total: Rs. 240.00" in msg
+    assert "Payment: Due Rs. 240.00" in msg
 
 
 def test_split_due_payment_formatting():
@@ -129,8 +129,8 @@ def test_split_due_payment_formatting():
             customer_name="Sita",
         )
     )
-    assert "Total: ₹240.00" in msg
-    assert "Paid: Cash ₹100.00 + UPI ₹50.00 + Due ₹90.00 (Split)" in msg
+    assert "Total: Rs. 240.00" in msg
+    assert "Paid: Cash Rs. 100.00 + UPI Rs. 50.00 + Due Rs. 90.00 (Split)" in msg
 
 
 def test_remarks_formatting():
@@ -185,8 +185,8 @@ def test_compile_whatsapp_template():
 
     assert "Hey John Doe" in res
     assert "at Nursery" in res
-    assert "Total is ₹190.00" in res
+    assert "Total is Rs. 190.00" in res
     assert "Invoice: https://invoice/ninja/pdf" in res
-    assert "Items: Rose (2 × ₹100.00) = ₹200.00" in res
+    assert "Items: Rose (2 × Rs. 100.00) = Rs. 200.00" in res
 
 

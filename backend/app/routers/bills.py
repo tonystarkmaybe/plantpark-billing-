@@ -48,9 +48,9 @@ from app.schemas.report import (
     SendReportWhatsAppRequest,
 )
 from app.services.whatsapp.eligibility import apply_phone_consent
-from app.services.whatsapp.service import send_bill_whatsapp
-from app.services.whatsapp.backends import WatiClient, WaMeLinkBuilder
-from app.services.whatsapp.phone import normalize_indian_phone
+from app.services.whatsapp.sender import queue_bill_invoice, trigger_manual_resend, send_whatsapp_invoice_process
+from app.services.whatsapp.webhook import validate_verify_token, process_webhook_payload
+from app.schemas.whatsapp import WhatsAppStatusOut
 
 router = APIRouter(prefix="/bills", tags=["bills"])
 
@@ -297,9 +297,8 @@ async def create_bill(
     if customer_name is None and bill.customer_id is not None:
         customer_name = _customer_name(db, bill.customer_id)
 
-    # 6) Auto-send WhatsApp receipt if enabled.
-    if shop is not None and shop.whatsapp_auto_send:
-        await send_bill_whatsapp(db, bill, shop, get_settings())
+    # 6) Queue WhatsApp background invoice send if enabled.
+    queue_bill_invoice(db, bill)
 
     response.status_code = status.HTTP_201_CREATED
     return _serialize(
@@ -615,18 +614,88 @@ async def send_whatsapp(
     db: Session = Depends(get_db),
     owner: User = Depends(require_shop_owner),
 ) -> SendWhatsAppResult:
-    """Send (or produce a wa.me link for) this bill on WhatsApp.
-
-    The bill is already saved; this is fully decoupled and never fails the sale.
-    Re-sending is always safe. Returns a result the frontend acts on directly:
-    show "Sent ✓" or open the wa.me link.
-    """
+    """Manually trigger sending this bill's WhatsApp invoice immediately."""
     bill = db.execute(select(Bill).where(Bill.id == bill_id)).scalar_one_or_none()
     if bill is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bill not found")
 
-    shop = db.execute(select(Shop).where(Shop.id == owner.shop_id)).scalar_one_or_none()
-    return await send_bill_whatsapp(db, bill, shop, get_settings())
+    # Queue and trigger immediately
+    bill.whatsapp_status = "queued"
+    bill.retry_count = 0
+    bill.whatsapp_error = None
+    db.commit()
+    
+    # Process it now (updates status to sent or failed)
+    await send_whatsapp_invoice_process(db, bill)
+    
+    db.refresh(bill)
+    if bill.whatsapp_status == "sent":
+        return SendWhatsAppResult(status="sent", detail="Successfully sent WhatsApp invoice.")
+    else:
+        return SendWhatsAppResult(
+            status="failed",
+            detail=bill.whatsapp_error or "Failed to send WhatsApp invoice. It will be retried in the background."
+        )
+
+
+@router.post("/{bill_id}/resend-whatsapp", response_model=SendWhatsAppResult)
+async def resend_whatsapp(
+    bill_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    owner: User = Depends(require_shop_owner),
+) -> SendWhatsAppResult:
+    """Manually resend this bill's WhatsApp invoice. Resets retry count and uses existing PDF."""
+    bill = db.execute(select(Bill).where(Bill.id == bill_id)).scalar_one_or_none()
+    if bill is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bill not found")
+
+    await trigger_manual_resend(db, bill)
+    
+    db.refresh(bill)
+    if bill.whatsapp_status == "sent":
+        return SendWhatsAppResult(status="sent", detail="Successfully resent WhatsApp invoice.")
+    else:
+        return SendWhatsAppResult(
+            status="failed",
+            detail=bill.whatsapp_error or "Resend failed. It will be retried in the background."
+        )
+
+
+@router.get("/{bill_id}/whatsapp-status", response_model=WhatsAppStatusOut)
+def get_whatsapp_status(
+    bill_id: uuid.UUID,
+    db: Session = Depends(get_db),
+    owner: User = Depends(require_shop_owner),
+) -> Bill:
+    """Get the live WhatsApp delivery and retry status for a bill."""
+    bill = db.execute(select(Bill).where(Bill.id == bill_id)).scalar_one_or_none()
+    if bill is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bill not found")
+    return bill
+
+
+@router.get("/whatsapp/webhook", tags=["webhooks"])
+def verify_whatsapp_webhook(
+    hub_mode: str = Query(alias="hub.mode"),
+    hub_challenge: str = Query(alias="hub.challenge"),
+    hub_verify_token: str = Query(alias="hub.verify_token"),
+):
+    """Meta Webhook GET verification endpoint."""
+    try:
+        challenge = validate_verify_token(hub_verify_token, hub_challenge, hub_mode)
+        from fastapi.responses import PlainTextResponse
+        return PlainTextResponse(challenge)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+
+
+@router.post("/whatsapp/webhook", tags=["webhooks"])
+async def receive_whatsapp_status_update(payload: dict) -> dict:
+    """Meta Webhook POST event status callback endpoint (uses privileged context)."""
+    from app.database import privileged_session
+    with privileged_session() as db:
+        await process_webhook_payload(payload, db)
+    return {"status": "ok"}
 
 
 def _generate_report_data(

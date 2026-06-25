@@ -50,16 +50,17 @@ class Settings(BaseSettings):
     # ── WhatsApp delivery ────────────────────────────────────────────────────
     # Global kill switch. When false, sending always degrades to a wa.me link.
     WHATSAPP_ENABLED: bool = False
-    # Wati.io API endpoint, e.g. https://live-server-XXXXX.wati.io
-    WATI_API_ENDPOINT: str = ""
-    # Bearer access token sent to Wati.io.
-    WATI_API_KEY: str = ""
-    # "wati" → try Wati then fall back to wa.me; "wa_me" → force wa.me only.
-    WHATSAPP_DEFAULT_BACKEND: str = "wati"
+    # Meta WhatsApp Cloud API settings
+    WHATSAPP_PHONE_NUMBER_ID: str = ""
+    WHATSAPP_ACCESS_TOKEN: str = ""
+    WHATSAPP_BUSINESS_ACCOUNT_ID: str = ""
+    WHATSAPP_VERIFY_TOKEN: str = ""
+    WHATSAPP_API_VERSION: str = "v20.0"
+    WHATSAPP_TEMPLATE_NAME: str = "plantora_invoice"
     # Default country code used to normalize bare national numbers (India = 91).
     WHATSAPP_COUNTRY_CODE: str = "91"
-    # Per-request timeout (seconds) for Wati HTTP calls.
-    WATI_TIMEOUT_SECONDS: float = 8.0
+    # Per-request timeout (seconds) for HTTP calls.
+    WHATSAPP_TIMEOUT_SECONDS: float = 8.0
 
     # ── Frontend Link ────────────────────────────────────────────────────────
     # Base URL of the frontend app, used to construct sharing URLs (e.g. wa.me and print links).
