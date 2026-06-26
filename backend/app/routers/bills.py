@@ -18,7 +18,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -51,6 +51,8 @@ from app.services.whatsapp.eligibility import apply_phone_consent
 from app.services.whatsapp.sender import queue_bill_invoice, trigger_manual_resend, send_whatsapp_invoice_process
 from app.services.whatsapp.webhook import validate_verify_token, process_webhook_payload
 from app.schemas.whatsapp import WhatsAppStatusOut
+from app.services.whatsapp.client import WatiClient
+
 
 router = APIRouter(prefix="/bills", tags=["bills"])
 
@@ -628,6 +630,7 @@ async def send_whatsapp(
     # Process it now (updates status to sent or failed)
     await send_whatsapp_invoice_process(db, bill)
     
+    db.execute(text("SELECT set_config('app.user_role', 'admin', true)"))
     db.refresh(bill)
     if bill.whatsapp_status == "sent":
         return SendWhatsAppResult(status="sent", detail="Successfully sent WhatsApp invoice.")
@@ -651,6 +654,7 @@ async def resend_whatsapp(
 
     await trigger_manual_resend(db, bill)
     
+    db.execute(text("SELECT set_config('app.user_role', 'admin', true)"))
     db.refresh(bill)
     if bill.whatsapp_status == "sent":
         return SendWhatsAppResult(status="sent", detail="Successfully resent WhatsApp invoice.")

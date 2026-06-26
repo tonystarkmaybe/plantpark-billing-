@@ -8,7 +8,7 @@ from app.config import get_settings
 from app.models.bill import Bill, BillItem
 from app.models.shop import Shop
 from app.models.customer import Customer
-from app.services.whatsapp.client import WhatsAppCloudClient
+from app.services.whatsapp.client import WhatsAppCloudClient, WatiClient
 from app.services.whatsapp.exceptions import WhatsAppError, PDFGenerationError, WhatsAppAPIError
 from app.services.whatsapp.media import generate_invoice_pdf, save_invoice_pdf
 from app.services.whatsapp.phone import normalize_indian_phone
@@ -124,45 +124,77 @@ async def send_whatsapp_invoice_process(db: Session, bill: Bill) -> None:
         # 3. Global send switch check
         if not settings.WHATSAPP_ENABLED:
             # Log as manual fallback since WhatsApp is globally disabled
-            raise WhatsAppError("Meta WhatsApp Cloud API is globally disabled in server environment settings.")
+            raise WhatsAppError("WhatsApp delivery is globally disabled in server environment settings.")
 
-        # 4. Meta Upload & Delivery
-        client = WhatsAppCloudClient()
         bill_id_short = str(bill.id).split("-")[0].upper()
         filename = f"invoice_{bill_id_short}.pdf"
 
-        # Step 4a: Upload PDF to get media_id
-        media_id = await client.upload_media(pdf_bytes, filename, "application/pdf")
+        if settings.WHATSAPP_DEFAULT_BACKEND == "wati":
+            # WATI delivery
+            client = WatiClient()
+            backend_base = settings.BACKEND_BASE_URL.rstrip("/")
+            media_prefix = settings.MEDIA_URL_PREFIX.lstrip("/")
+            pdf_url = f"{backend_base}/{media_prefix}/{pdf_path}"
 
-        # Step 4b: Send message (prefer Template if template name is configured, otherwise fallback to direct document)
-        template_name = settings.WHATSAPP_TEMPLATE_NAME or "plantora_invoice"
-        lang = shop.whatsapp_language or "en"
-        
-        # Format variables for the template: customer_name, bill_id, bill_total
-        cust_name = customer.name or "Valued Customer"
-        total_str = f"Rs. {bill.total:.2f}"
-        body_params = [cust_name, bill_id_short, total_str]
+            template_name = shop.whatsapp_message_template or settings.WHATSAPP_TEMPLATE_NAME or "plantora_invoice"
+            cust_name = customer.name or "Valued Customer"
+            total_str = f"Rs. {bill.total:.2f}"
+            body_params = [cust_name, bill_id_short, total_str]
 
-        try:
-            # Attempt to send template (standard production route)
-            msg_id = await client.send_template_document(
-                to_phone=norm.wa_me,
-                template_name=template_name,
-                lang_code=lang,
-                media_id=media_id,
-                file_name=filename,
-                body_parameters=body_params
-            )
-        except WhatsAppAPIError as template_err:
-            logger.warning("Template send failed, attempting direct document fallback: %s", template_err)
-            # Fallback: Try direct document message (succeeds if inside active 24h window)
-            caption = f"Here is your invoice from {shop.business_name or shop.name}."
-            msg_id = await client.send_document_message(
-                to_phone=norm.wa_me,
-                media_id=media_id,
-                file_name=filename,
-                caption=caption
-            )
+            try:
+                msg_id = await client.send_template_document(
+                    to_phone=norm.wa_me,
+                    template_name=template_name,
+                    pdf_url=pdf_url,
+                    body_parameters=body_params,
+                    broadcast_name=f"Invoice_{bill_id_short}"
+                )
+            except Exception as template_err:
+                logger.warning("WATI Template send failed, attempting direct document fallback: %s", template_err)
+                # Fallback: send session file directly
+                caption = f"Here is your invoice from {shop.business_name or shop.name}."
+                msg_id = await client.send_document_message(
+                    to_phone=norm.wa_me,
+                    pdf_bytes=pdf_bytes,
+                    file_name=filename,
+                    caption=caption
+                )
+        else:
+            # Meta Upload & Delivery
+            client = WhatsAppCloudClient()
+
+            # Step 4a: Upload PDF to get media_id
+            media_id = await client.upload_media(pdf_bytes, filename, "application/pdf")
+
+            # Step 4b: Send message (prefer Template if template name is configured, otherwise fallback to direct document)
+            template_name = shop.whatsapp_message_template or settings.WHATSAPP_TEMPLATE_NAME or "plantora_invoice"
+            lang = shop.whatsapp_language or "en"
+            
+            # Format variables for the template: customer_name, bill_id, bill_total
+            cust_name = customer.name or "Valued Customer"
+            total_str = f"Rs. {bill.total:.2f}"
+            body_params = [cust_name, bill_id_short, total_str]
+
+            try:
+                # Attempt to send template (standard production route)
+                msg_id = await client.send_template_document(
+                    to_phone=norm.wa_me,
+                    template_name=template_name,
+                    lang_code=lang,
+                    media_id=media_id,
+                    file_name=filename,
+                    body_parameters=body_params
+                )
+            except WhatsAppAPIError as template_err:
+                logger.warning("Template send failed, attempting direct document fallback: %s", template_err)
+                # Fallback: Try direct document message (succeeds if inside active 24h window)
+                caption = f"Here is your invoice from {shop.business_name or shop.name}."
+                msg_id = await client.send_document_message(
+                    to_phone=norm.wa_me,
+                    media_id=media_id,
+                    file_name=filename,
+                    caption=caption
+                )
 
         # 5. Success Recording
         bill.whatsapp_message_id = msg_id

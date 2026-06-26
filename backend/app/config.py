@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     # ── WhatsApp delivery ────────────────────────────────────────────────────
     # Global kill switch. When false, sending always degrades to a wa.me link.
     WHATSAPP_ENABLED: bool = False
+    # WhatsApp Default Backend (meta or wati)
+    WHATSAPP_DEFAULT_BACKEND: str = "wati"
     # Meta WhatsApp Cloud API settings
     WHATSAPP_PHONE_NUMBER_ID: str = ""
     WHATSAPP_ACCESS_TOKEN: str = ""
@@ -62,9 +64,15 @@ class Settings(BaseSettings):
     # Per-request timeout (seconds) for HTTP calls.
     WHATSAPP_TIMEOUT_SECONDS: float = 8.0
 
+    # WATI API settings
+    WATI_API_ENDPOINT: str = "https://live-mt-server.wati.io/10189838"
+    WATI_API_KEY: str = "wati_54f64b45-3b22-48d8-b993-3a5f3bc69350.37NuNmAvckWLBQ-L9Ux_n4c5LZEeo45FwExeoBAmygbEuIq_Nl9OBX8WIZ4G6W10w40hr8Psd2fKIaZ3xKAkiD0ZmAcQDuir9wSU14aqIMB8kYXBWl6oRtqXYJMzAYJF"
+    WATI_TIMEOUT_SECONDS: float = 15.0
+
     # ── Frontend Link ────────────────────────────────────────────────────────
     # Base URL of the frontend app, used to construct sharing URLs (e.g. wa.me and print links).
     FRONTEND_BASE_URL: str = "http://localhost:5173"
+    BACKEND_BASE_URL: str = "https://plantbill.in"
 
     @property
     def cors_origins_list(self) -> list[str]:

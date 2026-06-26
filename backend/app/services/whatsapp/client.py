@@ -224,3 +224,178 @@ class WhatsAppCloudClient:
         except httpx.HTTPError as e:
             logger.error("HTTP connection error during template send: %s", e)
             raise WhatsAppAPIError(f"HTTP connection error during template send: {e}")
+
+
+class WatiClient:
+    """Async client for WATI (WhatsApp Team Inbox) Platform."""
+
+    def __init__(self, api_url: str | None = None, api_key: str | None = None, timeout: float | None = None) -> None:
+        self.api_url = (api_url or settings.WATI_API_ENDPOINT).rstrip("/")
+        self.api_key = api_key or settings.WATI_API_KEY
+        self.timeout = timeout or settings.WATI_TIMEOUT_SECONDS or 15.0
+        self.headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "accept": "application/json",
+        }
+
+    async def send_text(self, to_phone: str, text: str) -> bool:
+        """Send a session text message via WATI."""
+        if not self.api_url or not self.api_key:
+            logger.warning("WATI API credentials or Base URL are missing.")
+            return False
+
+        clean_phone = to_phone.lstrip("+").strip()
+        url = f"{self.api_url}/api/v1/sendSessionMessage/{clean_phone}"
+        payload = {"messageText": text}
+
+        logger.info(
+            "WATI Send Text Started | URL: %s | Phone: %s | Payload: %s",
+            url, clean_phone, payload
+        )
+
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                resp = await client.post(url, headers=self.headers, json=payload)
+
+            logger.info(
+                "WATI Send Text Response | URL: %s | Status: %s | Body: %s",
+                url, resp.status_code, resp.text
+            )
+
+            if 200 <= resp.status_code < 300:
+                res_data = resp.json()
+                return res_data.get("result") is True or res_data.get("result") == "success" or res_data.get("validWhatsAppNumber") is True
+            return False
+        except Exception as e:
+            logger.error("Error sending text via WATI: %s", e)
+            return False
+
+    async def send_document_message(self, to_phone: str, pdf_bytes: bytes, file_name: str, caption: str | None = None) -> str:
+        """Send a direct PDF document message to the customer (requires active 24h window).
+
+        Returns:
+            str: The message ID or response indicator.
+        """
+        clean_phone = to_phone.lstrip("+").strip()
+        url = f"{self.api_url}/api/v1/sendSessionFile/{clean_phone}"
+
+        files = {
+            "file": (file_name, pdf_bytes, "application/pdf")
+        }
+        data = {}
+        if caption:
+            data["caption"] = caption
+
+        logger.info(
+            "WATI Send Session File Started | URL: %s | Phone: %s | File Name: %s",
+            url, clean_phone, file_name
+        )
+
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                resp = await client.post(url, headers=self.headers, files=files, data=data)
+
+            logger.info(
+                "WATI Send Session File Response | URL: %s | Status: %s | Body: %s",
+                url, resp.status_code, resp.text
+            )
+
+            if resp.status_code < 200 or resp.status_code >= 300:
+                raise WhatsAppAPIError(
+                    f"WATI Document message send failed with status code {resp.status_code}",
+                    status_code=resp.status_code,
+                    response_body=resp.text,
+                )
+
+            res_data = resp.json()
+            if res_data.get("result") is False or res_data.get("status") == "error":
+                raise WhatsAppAPIError(
+                    f"WATI Document message rejected: {res_data.get('message') or res_data}",
+                    status_code=resp.status_code,
+                    response_body=resp.text,
+                )
+            return str(res_data.get("id") or res_data.get("message") or "sent")
+        except httpx.HTTPError as e:
+            logger.error("HTTP connection error during WATI document send: %s", e)
+            raise WhatsAppAPIError(f"HTTP connection error during WATI document send: {e}")
+
+    async def send_template_document(
+        self,
+        to_phone: str,
+        template_name: str,
+        pdf_url: str,
+        body_parameters: list[str] | None = None,
+        broadcast_name: str = "Invoice"
+    ) -> str:
+        """Send a WhatsApp Template document message via WATI.
+
+        Returns:
+            str: The message ID.
+        """
+        clean_phone = to_phone.lstrip("+").strip()
+        url = f"{self.api_url}/api/v2/sendTemplateMessage"
+        params = {"whatsappNumber": clean_phone}
+
+        # Build parameters
+        wati_params = []
+        if body_parameters:
+            for idx, val in enumerate(body_parameters):
+                wati_params.append({"name": str(idx + 1), "value": val})
+                # Add robust named parameter aliases to support various templates
+                if idx == 0:
+                    wati_params.append({"name": "name", "value": val})
+                    wati_params.append({"name": "customer_name", "value": val})
+                    wati_params.append({"name": "customer", "value": val})
+                elif idx == 1:
+                    wati_params.append({"name": "bill_id", "value": val})
+                    wati_params.append({"name": "invoice_id", "value": val})
+                    wati_params.append({"name": "order_id", "value": val})
+                    wati_params.append({"name": "id", "value": val})
+                elif idx == 2:
+                    wati_params.append({"name": "total", "value": val})
+                    wati_params.append({"name": "amount", "value": val})
+                    wati_params.append({"name": "bill_total", "value": val})
+
+        wati_params.append({"name": "pdfLink", "value": pdf_url})
+        wati_params.append({"name": "invoice_url", "value": pdf_url})
+        wati_params.append({"name": "link", "value": pdf_url})
+
+        payload = {
+            "template_name": template_name,
+            "broadcast_name": broadcast_name,
+            "parameters": wati_params
+        }
+
+        logger.info(
+            "WATI Send Template Document Started | URL: %s | Phone: %s | Payload: %s",
+            url, clean_phone, payload
+        )
+
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                resp = await client.post(url, headers=self.headers, params=params, json=payload)
+
+            logger.info(
+                "WATI Send Template Document Response | URL: %s | Status: %s | Body: %s",
+                url, resp.status_code, resp.text
+            )
+
+            if resp.status_code < 200 or resp.status_code >= 300:
+                raise WhatsAppAPIError(
+                    f"WATI Template send failed with status code {resp.status_code}",
+                    status_code=resp.status_code,
+                    response_body=resp.text,
+                )
+
+            res_data = resp.json()
+            if res_data.get("result") is False or res_data.get("status") == "error":
+                raise WhatsAppAPIError(
+                    f"WATI Template send rejected: {res_data.get('message') or res_data}",
+                    status_code=resp.status_code,
+                    response_body=resp.text,
+                )
+            return str(res_data.get("id") or res_data.get("message") or "sent")
+        except httpx.HTTPError as e:
+            logger.error("HTTP connection error during WATI template send: %s", e)
+            raise WhatsAppAPIError(f"HTTP connection error during WATI template send: {e}")
+
