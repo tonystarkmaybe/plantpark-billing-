@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     BOOTSTRAP_ADMIN_PASSWORD: str
 
     # CORS — comma-separated list of allowed origins.
-    CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
+    CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000,https://localhost"
 
     # Media / image storage.
     # MEDIA_ROOT: directory where uploaded product images are stored on disk.
