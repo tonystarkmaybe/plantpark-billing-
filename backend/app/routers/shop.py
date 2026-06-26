@@ -89,6 +89,8 @@ def update_shop_settings(
         shop.whatsapp_footer_message = payload.whatsapp_footer_message
     if payload.whatsapp_language is not None:
         shop.whatsapp_language = payload.whatsapp_language
+    if payload.logo_url is not None:
+        shop.logo_url = payload.logo_url
 
     db.flush()
     db.refresh(shop)

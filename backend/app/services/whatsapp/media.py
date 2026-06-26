@@ -1,6 +1,7 @@
 import io
 import decimal
 import datetime as dt
+import logging
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -13,6 +14,7 @@ from reportlab.platypus import (
     Table,
     TableStyle,
     HRFlowable,
+    Image as RLImage,
 )
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.graphics.shapes import Drawing, Circle, Polygon, Rect
@@ -23,6 +25,8 @@ from app.models.customer import Customer
 from app.config import get_settings
 from app.services.whatsapp.exceptions import PDFGenerationError
 from app.media import invoices_dir
+
+logger = logging.getLogger("plantora.whatsapp.media")
 
 settings = get_settings()
 SHOP_TZ = ZoneInfo("Asia/Kolkata")
@@ -68,6 +72,35 @@ def draw_leaf_icon() -> Drawing:
         strokeColor=None
     ))
     return d
+
+
+def get_shop_logo(shop: Shop):
+    """Download the shop's custom logo and return an Image flowable, or fall back to the default leaf badge."""
+    logo_url = shop.logo_url
+    if not logo_url:
+        return draw_leaf_icon()
+
+    import httpx
+    from PIL import Image as PILImage
+
+    logger.info("Attempting to download custom logo for shop %s from URL: %s", shop.id, logo_url)
+    try:
+        # Fetch logo image with a 2-second timeout to prevent blocking worker
+        resp = httpx.get(logo_url, timeout=2.0)
+        if resp.status_code == 200:
+            # Verify it is a valid image by loading it using PIL
+            img_data = resp.content
+            # This checks if PIL can parse it, throwing an exception if not
+            PILImage.open(io.BytesIO(img_data)).verify()
+            
+            # Return scaled ReportLab Image flowable
+            return RLImage(io.BytesIO(img_data), width=40, height=40)
+        else:
+            logger.warning("Failed to download custom logo (HTTP status %s). Falling back to default leaf badge.", resp.status_code)
+    except Exception as e:
+        logger.warning("Error fetching custom shop logo: %s. Falling back to default leaf badge.", e)
+        
+    return draw_leaf_icon()
 
 
 def generate_invoice_pdf(
@@ -225,13 +258,14 @@ def generate_invoice_pdf(
         
         # ── HEADER ROW ────────────────────────────────────────────────────────
         # Left side: Logo Badge + Branding
-        logo_drawing = draw_leaf_icon()
+        logo_flowable = get_shop_logo(shop)
+        brand_name = (shop.business_name or shop.name or "PLANTORA").upper()
         brand_meta = [
-            Paragraph("PLANTORA", title_style),
-            Paragraph("Nursery Billing & Invoice Solutions", tagline_style),
+            Paragraph(brand_name, title_style),
+            Paragraph("Nursery Billing Invoice", tagline_style),
         ]
         
-        left_header_table = Table([[logo_drawing, brand_meta]], colWidths=[45, 200])
+        left_header_table = Table([[logo_flowable, brand_meta]], colWidths=[45, 200])
         left_header_table.setStyle(TableStyle([
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
             ("LEFTPADDING", (1, 0), (1, 0), 6),
@@ -239,12 +273,11 @@ def generate_invoice_pdf(
             ("TOPPADDING", (0, 0), (-1, -1), 0),
         ]))
         
-        # Right side: Shop details
+        # Right side: Shop details (Do not display UPI ID here)
         shop_name = shop.business_name or shop.name or "Nursery"
         shop_addr = shop.business_address or "Shop Address Not Configured"
         shop_phone = f"Ph: {shop.business_phone}" if shop.business_phone else ""
         shop_email = f"Email: {shop.business_email}" if shop.business_email else ""
-        shop_upi = f"UPI VPA: {shop.business_upi}" if shop.business_upi else ""
         
         shop_details_flow = [
             Paragraph(shop_name.upper(), shop_title_style),
@@ -252,7 +285,7 @@ def generate_invoice_pdf(
         ]
         if shop_addr:
             shop_details_flow.append(Paragraph(shop_addr, shop_text_style))
-        for text_line in (shop_phone, shop_email, shop_upi):
+        for text_line in (shop_phone, shop_email):
             if text_line:
                 shop_details_flow.append(Paragraph(text_line, shop_text_style))
                 

@@ -19,6 +19,7 @@ class ShopSettingsOut(BaseModel):
     whatsapp_message_template: str | None = None
     whatsapp_footer_message: str | None = None
     whatsapp_language: str
+    logo_url: str | None = None
     
     model_config = {"from_attributes": True}
 
@@ -34,3 +35,4 @@ class ShopSettingsUpdate(BaseModel):
     whatsapp_message_template: str | None = None
     whatsapp_footer_message: str | None = None
     whatsapp_language: str | None = None
+    logo_url: str | None = None

@@ -97,3 +97,18 @@ class Shop(Base):
             new_settings["whatsapp_language"] = value.strip()
         self.settings = new_settings
 
+    @property
+    def logo_url(self) -> str | None:
+        return self.settings.get("logo_url", None)
+
+    @logo_url.setter
+    def logo_url(self, value: str | None) -> None:
+        if self.settings is None:
+            self.settings = {}
+        new_settings = dict(self.settings)
+        if value is None:
+            new_settings.pop("logo_url", None)
+        else:
+            new_settings["logo_url"] = value.strip()
+        self.settings = new_settings
+
